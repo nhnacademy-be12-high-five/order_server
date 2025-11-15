@@ -1,17 +1,21 @@
-server:
-  port: 9003
-
 spring:
   application:
     name: order_server
+  
+  profiles:
+    active: dev
+  
+  config:
+    import: "configserver:"
 
   cloud:
     config:
-      enabled: false # config_server ?? ? ??
+      discovery:
+        enabled: true
+        service-id: config-server
+      fail-fast: true
 
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
-  instance:
-    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
