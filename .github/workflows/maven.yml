@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci-deploy:
-    uses: nhnacademy-be12-high-five/.github/.github/workflows/shared-workflow.yml@feat/cicd
+    uses: nhnacademy-be12-high-five/.github/.github/workflows/service-workflow.yml@main
     with:
       project-key: team5-order-service
       docker-image: fbxogns123/order-server
