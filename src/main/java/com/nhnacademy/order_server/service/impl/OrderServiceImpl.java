@@ -1,10 +1,10 @@
-package com.nhnacademy.order_server.service;
+package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderReturnRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderReturnCheckResponse;
-import com.nhnacademy.order_server.service.impl.OrderService;
+import com.nhnacademy.order_server.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;

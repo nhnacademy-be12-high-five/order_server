@@ -1,4 +1,4 @@
-package com.nhnacademy.order_server.service.impl;
+package com.nhnacademy.order_server.service;
 
 
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
