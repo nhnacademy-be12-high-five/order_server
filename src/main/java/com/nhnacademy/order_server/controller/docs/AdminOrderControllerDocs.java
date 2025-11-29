@@ -13,7 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name ="Admin Order API", description = "관리자용 주문/반품/정책 관리 API")
-@RequestMapping("api/admin")
+@RequestMapping("/api/admin")
 public interface AdminOrderControllerDocs {
 
     @Operation(summary = "전체 주문 목록 조회", description = "상태값으로 필터링하여 주문 목록을 조회합니다.")

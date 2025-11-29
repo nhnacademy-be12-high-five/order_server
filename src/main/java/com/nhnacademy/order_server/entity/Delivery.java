@@ -1,9 +1,7 @@
 package com.nhnacademy.order_server.entity;
 
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -11,6 +9,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name ="delivery")
 @Getter
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Delivery {
 
@@ -29,9 +29,9 @@ public class Delivery {
     @Column(name = "est_dlv_dt", nullable = false)
     private LocalDate estimatedDeliveryDate;
 
-    @Column(name = "act_ship_dt", nullable = false)
+    @Column(name = "act_ship_dt")
     private LocalDateTime actualShipDate;
 
-    @Column(name = "act_comp_dt", nullable = false)
+    @Column(name = "act_comp_dt")
     private LocalDateTime actualCompletionDate;
 }

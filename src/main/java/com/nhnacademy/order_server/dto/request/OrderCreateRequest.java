@@ -44,6 +44,7 @@ public class OrderCreateRequest {
         @NotNull
         private Long bookId;
 
+        @NotNull
         @Min(1)
         private Integer quantity;
 
