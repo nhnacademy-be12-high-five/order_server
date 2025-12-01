@@ -29,4 +29,15 @@ public class DeliveryPolicy {
 
     @Column(name = "effective_date", nullable = false)
     private LocalDateTime effectiveDate;
+
+    public DeliveryPolicy(Integer minOrderAmount, Integer standardShippingFee){
+        this.minOrderAmount = minOrderAmount;
+        this.standardShippingFee = standardShippingFee;
+        this.isActive = true;
+        this.effectiveDate = LocalDateTime.now();
+    }
+
+    public void deactivate(){
+        this.isActive =false;
+    }
 }
