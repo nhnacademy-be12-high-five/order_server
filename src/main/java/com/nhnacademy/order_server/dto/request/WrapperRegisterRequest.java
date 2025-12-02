@@ -1,5 +1,6 @@
 package com.nhnacademy.order_server.dto.request;
 
+import com.nhnacademy.order_server.entity.Wrapper;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -18,4 +19,12 @@ public class WrapperRegisterRequest {
     @NotNull
     @Schema(description = "포장지 가격", example = "1000")
     private Integer wrapperPrice;
+
+    public Wrapper toEntity() {
+        return new Wrapper(
+                this.wrapperName,
+                this.wrapperPrice,
+                true
+        );
+    }
 }
