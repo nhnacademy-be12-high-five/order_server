@@ -1,5 +1,6 @@
 package com.nhnacademy.order_server.dto.response;
 
+import com.nhnacademy.order_server.entity.DeliveryPolicy;
 import lombok.Builder;
 import lombok.Getter;
 import java.time.LocalDateTime;
@@ -7,9 +8,19 @@ import java.time.LocalDateTime;
 @Getter
 @Builder
 public class DeliveryPolicyResponse {
-    private Integer id;
+    private Long id;
     private Integer standardShippingFee;
     private Integer minOrderAmount;
     private Boolean isActive;
     private LocalDateTime effectiveDate;
+
+    public static DeliveryPolicyResponse from(DeliveryPolicy policy) {
+        return DeliveryPolicyResponse.builder()
+                .id(policy.getId())
+                .standardShippingFee(policy.getStandardShippingFee())
+                .minOrderAmount(policy.getMinOrderAmount())
+                .isActive(policy.getIsActive())
+                .effectiveDate(policy.getEffectiveDate())
+                .build();
+    }
 }

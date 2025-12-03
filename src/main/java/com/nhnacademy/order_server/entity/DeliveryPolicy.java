@@ -16,7 +16,7 @@ public class DeliveryPolicy {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "deliver_policy_id")
-    private Integer id;
+    private Long id;
 
     @Column(name = "min_order_amount", nullable = false)
     private Integer minOrderAmount;

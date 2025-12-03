@@ -13,6 +13,7 @@ public class Wrapper {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "wrapper_id")
     private Long id;
 
     @Column(name = "wrp_nm", nullable = false, length = 100)

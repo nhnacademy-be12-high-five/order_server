@@ -15,12 +15,12 @@ import java.time.LocalDateTime;
 public class Delivery {
 
     @Id
-    @Column(name = "id2")
+    @Column(name = "order_id")
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
     @MapsId
-    @JoinColumn(name = "id2")
+    @JoinColumn(name = "order_id")
     private Order order;
 
     @Column(name = "req_dlv_dt", nullable = false)
