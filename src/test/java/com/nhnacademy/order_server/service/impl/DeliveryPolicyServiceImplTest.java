@@ -24,7 +24,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
-class DeliveryPolicyServiceTest {
+class DeliveryPolicyServiceImplTest {
 
     @InjectMocks
     private DeliveryPolicyServiceImpl deliveryPolicyService;

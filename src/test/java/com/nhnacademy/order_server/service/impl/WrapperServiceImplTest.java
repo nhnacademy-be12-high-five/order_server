@@ -25,7 +25,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
-class WrapperServiceTest {
+class WrapperServiceImplTest {
 
     @InjectMocks
     private WrapperServiceImpl wrapperService;
