@@ -12,5 +12,4 @@ public class OrderException extends RuntimeException {
 
     private final OrderErrorCode errorCode;
 
-
 }

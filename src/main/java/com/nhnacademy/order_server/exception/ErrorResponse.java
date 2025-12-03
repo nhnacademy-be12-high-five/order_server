@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 @Getter
 @Builder
 public class ErrorResponse {
+    @Builder.Default
     private final LocalDateTime timestamp = LocalDateTime.now();
     private final int status;
     private final String error;

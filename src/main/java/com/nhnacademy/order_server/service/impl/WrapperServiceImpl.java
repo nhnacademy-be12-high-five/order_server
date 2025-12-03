@@ -50,6 +50,13 @@ public class WrapperServiceImpl implements WrapperService {
     public List<WrapperResponse> getAllWrappers() {
         return wrapperRepository.findAll().stream()
                 .map(WrapperResponse::from)
-                .collect(Collectors.toList());
+                .toList();
+    }
+
+    @Override
+    public List<WrapperResponse> getAvailableWrappers() {
+        return wrapperRepository.findByIsAvailableTrue().stream()
+                .map(WrapperResponse::from)
+                .toList();
     }
 }

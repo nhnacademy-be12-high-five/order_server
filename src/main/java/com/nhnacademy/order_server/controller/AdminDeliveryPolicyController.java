@@ -4,8 +4,10 @@ import com.nhnacademy.order_server.controller.docs.AdminDeliveryPolicyController
 import com.nhnacademy.order_server.dto.request.DeliveryPolicyRequest;
 import com.nhnacademy.order_server.dto.response.DeliveryPolicyResponse;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -17,7 +19,7 @@ public class AdminDeliveryPolicyController implements AdminDeliveryPolicyControl
     private final DeliveryPolicyService deliveryPolicyService;
 
     @Override
-    public ResponseEntity<Void> createDeliveryPolicy(DeliveryPolicyRequest request) {
+    public ResponseEntity<Void> createDeliveryPolicy(@Valid @RequestBody DeliveryPolicyRequest request) {
         deliveryPolicyService.createDeliveryPolicy(request);
         return ResponseEntity.status(201).build();
     }

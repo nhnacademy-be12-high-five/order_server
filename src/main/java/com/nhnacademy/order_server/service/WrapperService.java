@@ -9,7 +9,8 @@ public interface WrapperService {
 
 
     void createWrapper(WrapperRegisterRequest request);
-    void updateWrapper(Long WrapperId, WrapperRegisterRequest request);
+    void updateWrapper(Long wrapperId, WrapperRegisterRequest request);
     void deleteWrapper(Long wrapperId);
     List<WrapperResponse> getAllWrappers();
+    List<WrapperResponse> getAvailableWrappers();
 }
