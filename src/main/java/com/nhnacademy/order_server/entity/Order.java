@@ -2,9 +2,7 @@ package com.nhnacademy.order_server.entity;
 
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -13,6 +11,8 @@ import java.util.List;
 @Entity
 @Table(name = "orders")
 @Getter
+@Builder
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Order {
 
@@ -48,12 +48,22 @@ public class Order {
     @Column(name = "dlv_fee", nullable = false)
     private Integer deliveryFee;
 
+    @Column(name = "cpn_disc_amt")
+    private Integer couponDiscount; // 쿠폰 할인 금액
+
+    @Column(name = "pnt_use_amt")
+    private Integer pointDiscount;  // 포인트 사용 금액
+
+    @Column(name = "pnt_earn_amt")
+    private Integer earnedPoint;    // 적립 예정 포인트
+
     @Column(name = "ord_pw")
     private Integer orderPassword;
 
     @Column(name = "user_id")
     private Long userId;
 
+    @Builder.Default
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL)
     private List<OrderItem> orderItems = new ArrayList<>();
 
@@ -62,4 +72,13 @@ public class Order {
 
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
     private OrderReturn orderReturn;
+
+    public void addOrderItem(OrderItem orderItem) {
+        this.orderItems.add(orderItem);
+        orderItem.setOrder(this);
+    }
+
+    public void updateStatus(DeliveryStatus deliveryStatus) {
+        this.deliveryStatus = deliveryStatus;
+    }
 }

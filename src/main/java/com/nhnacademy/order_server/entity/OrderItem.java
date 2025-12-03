@@ -1,13 +1,13 @@
 package com.nhnacademy.order_server.entity;
 
 import jakarta.persistence.*;
-import lombok.AccessLevel;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 @Entity
 @Table(name = "order_item")
 @Getter
+@Builder // [추가] 빌더 패턴
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderItem {
 
@@ -20,6 +20,9 @@ public class OrderItem {
     private Integer quantity;
 
     @Column(name = "unit_prc", nullable = false)
+    private Integer unitPrice;
+
+    @Column(name = "is_wrp", nullable = false)
     private boolean isWrapped;
 
     @Column(name = "book_id", nullable = false)
@@ -35,4 +38,9 @@ public class OrderItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "wrp_id")
     private Wrapper wrapper;
+
+    // 연관관계 편의 메서드
+    public void setOrder(Order order) {
+        this.order = order;
+    }
 }
