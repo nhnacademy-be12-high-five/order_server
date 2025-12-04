@@ -3,7 +3,7 @@ package com.nhnacademy.order_server.service.impl;
 import com.nhnacademy.order_server.entity.DeliveryPolicy;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
-import com.nhnacademy.order_server.repository.DeliveryPolicyRepository;
+import com.nhnacademy.order_server.service.DeliveryPolicyService;
 import com.nhnacademy.order_server.service.DeliveryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,20 +14,27 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class DeliveryServiceImpl implements DeliveryService {
 
-    private final DeliveryPolicyRepository deliveryPolicyRepository;
+    private static final int DEFAULT_REMOTE_AREA_SURCHARGE = 5000;
 
-    public int calculateDeliveryFee(int productAmount, String address){
+    private final DeliveryPolicyService deliveryPolicyService;
 
-        DeliveryPolicy policy = deliveryPolicyRepository.findByIsActiveTrue()
-                .orElseThrow(()-> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
+    public int calculateDeliveryFee(Integer productAmount, String address){
+
+        int safeProductAmount = (productAmount == null) ? 0 : productAmount;
+
+        DeliveryPolicy policy = deliveryPolicyService.getActivePolicyEntity();
 
         int deliveryFee = 0;
-        if(productAmount < policy.getMinOrderAmount()){
+
+        if(safeProductAmount < policy.getMinOrderAmount()){
             deliveryFee = policy.getStandardShippingFee();
         }
 
         if (isRemoteArea(address)){
-            deliveryFee += 5000;
+            int surcharge = (policy.getRemoteAreaSurcharge() != null)
+                    ? policy.getRemoteAreaSurcharge()
+                    : DEFAULT_REMOTE_AREA_SURCHARGE;
+            deliveryFee += surcharge;
         }
 
         return deliveryFee;
