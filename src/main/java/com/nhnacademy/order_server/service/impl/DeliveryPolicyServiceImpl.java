@@ -55,7 +55,7 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
     }
 
     @Override
-    @Cacheable(value = "activeDeliveryPolicy", key = "'activePolicy'") // [캐싱 적용] 캐시에 있으면 DB 접근 없이 반환
+    @Cacheable(value = "activeDeliveryPolicy", key = "'activePolicy'")
     public DeliveryPolicy getActivePolicyEntity() {
         return deliveryPolicyRepository.findByIsActiveTrue()
                 .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));

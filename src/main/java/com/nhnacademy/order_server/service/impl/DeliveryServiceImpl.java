@@ -20,7 +20,11 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     public int calculateDeliveryFee(Integer productAmount, String address){
 
-        int safeProductAmount = (productAmount == null) ? 0 : productAmount;
+        if (productAmount == null || productAmount < 0) {
+                       throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+        }
+
+        int safeProductAmount = productAmount;
 
         DeliveryPolicy policy = deliveryPolicyService.getActivePolicyEntity();
 
