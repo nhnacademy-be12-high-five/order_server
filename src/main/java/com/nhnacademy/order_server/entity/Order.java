@@ -18,9 +18,10 @@ public class Order {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "order_id")
     private Long id;
 
-    @Column(name = "order_key", unique = true, nullable = false) // [추가] 외부 노출용 난수 키
+    @Column(name = "order_key", unique = true, nullable = false)
     private String orderKey;
 
     @Column(name = "is_mbr", nullable = false)
@@ -60,6 +61,13 @@ public class Order {
     @Column(name = "pnt_earn_amt")
     private Integer earnedPoint;
 
+    @Setter
+    @Column(name = "payment_key")
+    private String paymentKey;
+
+    @Column(name = "coupon_id")
+    private Long couponId;
+
     @Column(name = "ord_pw")
     private Integer orderPassword;
 
@@ -84,4 +92,5 @@ public class Order {
     public void updateStatus(DeliveryStatus deliveryStatus) {
         this.deliveryStatus = deliveryStatus;
     }
+
 }
