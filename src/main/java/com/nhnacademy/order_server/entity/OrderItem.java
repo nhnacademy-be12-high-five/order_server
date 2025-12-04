@@ -6,7 +6,7 @@ import lombok.*;
 @Entity
 @Table(name = "order_item")
 @Getter
-@Builder // [추가] 빌더 패턴
+@Builder
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class OrderItem {

@@ -20,6 +20,9 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "order_key", unique = true, nullable = false) // [추가] 외부 노출용 난수 키
+    private String orderKey;
+
     @Column(name = "is_mbr", nullable = false)
     private Boolean isMember;
 
@@ -49,13 +52,13 @@ public class Order {
     private Integer deliveryFee;
 
     @Column(name = "cpn_disc_amt")
-    private Integer couponDiscount; // 쿠폰 할인 금액
+    private Integer couponDiscount;
 
     @Column(name = "pnt_use_amt")
-    private Integer pointDiscount;  // 포인트 사용 금액
+    private Integer pointDiscount;
 
     @Column(name = "pnt_earn_amt")
-    private Integer earnedPoint;    // 적립 예정 포인트
+    private Integer earnedPoint;
 
     @Column(name = "ord_pw")
     private Integer orderPassword;

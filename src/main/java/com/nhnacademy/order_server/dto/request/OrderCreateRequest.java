@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -43,6 +44,7 @@ public class OrderCreateRequest {
     private Long couponId;
 
     @Schema(description = "사용할 포인트 금액 (선택)", example = "3000")
+    @Min(0)
     private Integer usedPoint;
 
     @Valid
@@ -75,22 +77,36 @@ public class OrderCreateRequest {
         }
     }
 
-    public Order toEntity(int productAmount, int deliveryFee, int wrappingFee,
-                          int couponDiscount, int pointDiscount, int paymentAmount, int earnedPoint) {
+    @Builder
+    @Getter
+    public static class OrderCalculationResult {
+        private int productAmount;
+        private int deliveryFee;
+        private int wrappingFee;
+        private int couponDiscount;
+        private int pointDiscount;
+        private int paymentAmount;
+        private int earnedPoint;
+    }
+
+
+    public Order toEntity(OrderCalculationResult calculation, String orderKey) {
         return Order.builder()
                 .userId(this.userId)
                 .isMember(this.userId != null)
                 .receiverName(this.receiverName)
                 .receiverAddress(this.receiverAddress)
                 .orderDate(LocalDateTime.now())
-                .deliveryStatus(DeliveryStatus.WAITING)
-                .productAmount(productAmount)
-                .deliveryFee(deliveryFee)
-                .wrappingFee(wrappingFee)
-                .couponDiscount(couponDiscount)
-                .pointDiscount(pointDiscount)
-                .paymentAmount(paymentAmount)
-                .earnedPoint(earnedPoint)
+                .deliveryStatus(DeliveryStatus.PENDING)
+                .productAmount(calculation.getProductAmount())
+                .deliveryFee(calculation.getDeliveryFee())
+                .wrappingFee(calculation.getWrappingFee())
+                .couponDiscount(calculation.getCouponDiscount())
+                .pointDiscount(calculation.getPointDiscount())
+                .paymentAmount(calculation.getPaymentAmount())
+                .earnedPoint(calculation.getEarnedPoint())
+
+                .orderKey(orderKey)
 
                 .orderPassword(this.orderPassword)
                 .build();

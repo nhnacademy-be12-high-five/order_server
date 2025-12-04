@@ -16,7 +16,7 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     private final DeliveryPolicyRepository deliveryPolicyRepository;
 
-    public int calculateDeliveryFee(Integer productAmount, String address){
+    public int calculateDeliveryFee(int productAmount, String address){
 
         DeliveryPolicy policy = deliveryPolicyRepository.findByIsActiveTrue()
                 .orElseThrow(()-> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));

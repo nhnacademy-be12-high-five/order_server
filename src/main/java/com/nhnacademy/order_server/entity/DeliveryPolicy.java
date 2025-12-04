@@ -24,6 +24,9 @@ public class DeliveryPolicy {
     @Column(name = "standard_shipping_fee", nullable = false)
     private Integer standardShippingFee;
 
+    @Column(name = "remote_area_surcharge")
+    private Integer remoteAreaSurcharge;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 

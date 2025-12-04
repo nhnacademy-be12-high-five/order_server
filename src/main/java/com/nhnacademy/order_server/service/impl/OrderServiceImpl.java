@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -47,17 +48,16 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderException(OrderErrorCode.ORDER_PASSWORD_REQUIRED);
         }
 
-        // 2. 계산 로직 (상품, 포장, 적립금)
         List<OrderItem> tempOrderItems = new ArrayList<>();
         int totalProductAmount = 0;
         int totalWrappingFee = 0;
         int totalEarnedPoint = 0;
 
+        // 2. 계산 로직 (상품, 포장, 적립금)
         for (OrderCreateRequest.OrderItemRequest itemReq : request.getOrderItems()) {
-            int bookPrice = FIXED_BOOK_PRICE; // [Feign Mock] 책 가격
+            int bookPrice = FIXED_BOOK_PRICE;
 
             // [Feign Mock] 재고 확인 (여기서 재고를 '가차감' 해야 함)
-            // inventoryClient.holdStock(itemReq.getBookId(), itemReq.getQuantity());
 
             totalEarnedPoint += (int) (bookPrice * itemReq.getQuantity() * EARN_RATE);
 
@@ -77,7 +77,7 @@ public class OrderServiceImpl implements OrderService {
 
         int couponDiscount = 0;
         if (request.getCouponId() != null) {
-            couponDiscount = FIXED_COUPON_DISCOUNT; // [Feign Mock] 쿠폰 할인
+            couponDiscount = FIXED_COUPON_DISCOUNT;
             if (couponDiscount > totalProductAmount) couponDiscount = totalProductAmount;
         }
 
@@ -87,20 +87,32 @@ public class OrderServiceImpl implements OrderService {
         int finalPaymentAmount = (totalProductAmount + totalWrappingFee + deliveryFee) - couponDiscount - usedPoint;
         if (finalPaymentAmount < 0) finalPaymentAmount = 0;
 
-        // 4. 엔티티 생성 (상태: PENDING)
-        // [변경] createOrder 시점에는 아직 '결제 대기(PENDING)' 상태여야 함
-        Order order = request.toEntity(totalProductAmount, deliveryFee, totalWrappingFee,
-                couponDiscount, usedPoint, finalPaymentAmount, totalEarnedPoint);
+        // -----------------------------------------------------------------
+        // 4. [FIX 1] 주문 그룹 식별 키 (UUID) 생성
+        String orderKey = UUID.randomUUID().toString();
 
-        // request.toEntity 내부의 status를 PENDING으로 변경하거나, 여기서 set 메서드로 덮어씌워야 함
-        // (현재 DTO toEntity가 WAITING으로 되어있다면 PENDING으로 수정 필요)
+        // 5. [FIX 2] 계산 결과를 DTO로 묶음
+        OrderCreateRequest.OrderCalculationResult calculationResult =
+                OrderCreateRequest.OrderCalculationResult.builder()
+                        .productAmount(totalProductAmount)
+                        .deliveryFee(deliveryFee)
+                        .wrappingFee(totalWrappingFee)
+                        .couponDiscount(couponDiscount)
+                        .pointDiscount(usedPoint)
+                        .paymentAmount(finalPaymentAmount)
+                        .earnedPoint(totalEarnedPoint)
+                        .build();
 
+        // 6. [FIX 3] 엔티티 생성 (orderKey를 파라미터로 전달)
+        Order order = request.toEntity(calculationResult, orderKey);
+
+        // 7. 저장 로직
         for (OrderItem item : tempOrderItems) {
             order.addOrderItem(item);
         }
         orderRepository.save(order);
 
-        // 배송 정보 (아직 확정 전이지만 데이터는 생성)
+        // 배송 정보 저장
         LocalDate requestDate = (request.getRequestDeliveryDate() != null) ?
                 request.getRequestDeliveryDate() : LocalDate.now().plusDays(2);
 
@@ -111,7 +123,7 @@ public class OrderServiceImpl implements OrderService {
                 .build();
         deliveryRepository.save(delivery);
 
-        return order.getId(); // 이 ID로 결제창을 띄움
+        return order.getId();
     }
 
     /**

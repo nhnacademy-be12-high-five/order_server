@@ -8,6 +8,7 @@ import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryPolicyRepository;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,5 +52,12 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
 
         policy.deactivate();
+    }
+
+    @Override
+    @Cacheable(value = "activeDeliveryPolicy", key = "'activePolicy'") // [캐싱 적용] 캐시에 있으면 DB 접근 없이 반환
+    public DeliveryPolicy getActivePolicyEntity() {
+        return deliveryPolicyRepository.findByIsActiveTrue()
+                .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
     }
 }
