@@ -1,4 +1,4 @@
-package com.nhnacademy.order_server.service;
+package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.dto.request.WrapperRegisterRequest;
 import com.nhnacademy.order_server.dto.response.WrapperResponse;

@@ -8,7 +8,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,6 +22,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AdminWrapperController.class)
+@TestPropertySource(properties = {
+        "book.service.url=http://localhost:8081",
+        "coupon.service.url=http://localhost:8082",
+        "member.service.url=http://localhost:8083",
+        "cart.service.url=http://localhost:8084",
+        "payment.service.url=http://localhost:8085"
+})
 class AdminWrapperControllerTest {
 
     @Autowired
@@ -30,6 +39,9 @@ class AdminWrapperControllerTest {
 
     @MockitoBean
     private WrapperService wrapperService;
+
+    @MockitoBean
+    private RedisConnectionFactory redisConnectionFactory;
 
     @Test
     @DisplayName("포장지 등록 성공 (201 Created)")

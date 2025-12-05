@@ -39,4 +39,4 @@ public class AdminDeliveryPolicyController implements AdminDeliveryPolicyControl
         deliveryPolicyService.deleteDeliveryPolicy(policyId);
         return ResponseEntity.noContent().build();
     }
-}
+ }

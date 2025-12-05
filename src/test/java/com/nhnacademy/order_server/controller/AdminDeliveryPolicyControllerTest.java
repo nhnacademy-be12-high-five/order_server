@@ -8,8 +8,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.redis.connection.RedisConnectionFactory; // Import 필수
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource; // Import 필수
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
@@ -19,32 +22,42 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(AdminDeliveryPolicyController.class) // 컨트롤러만 테스트
+@WebMvcTest(AdminDeliveryPolicyController.class)
+@TestPropertySource(properties = { // [추가] URL 설정 문제 예방용
+        "book.service.url=http://localhost:8081",
+        "coupon.service.url=http://localhost:8082",
+        "member.service.url=http://localhost:8083",
+        "cart.service.url=http://localhost:8084",
+        "payment.service.url=http://localhost:8085"
+})
 class AdminDeliveryPolicyControllerTest {
 
     @Autowired
-    private MockMvc mockMvc; // API 요청을 가짜로 날려주는 도구
+    private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper; // 객체 -> JSON 변환기
+    private ObjectMapper objectMapper;
 
-    @MockitoBean // 가짜 서비스 (컨트롤러 테스트니까 서비스 로직은 몰라도 됨)
+    @MockitoBean
     private DeliveryPolicyService deliveryPolicyService;
+
+    // [해결책] RedisConnectionFactory를 Mock으로 주입하여 설정 통과
+    @MockitoBean
+    private RedisConnectionFactory redisConnectionFactory;
 
     @Test
     @DisplayName("배송 정책 등록 성공 (201 Created)")
     void createDeliveryPolicy() throws Exception {
         // given
         DeliveryPolicyRequest request = new DeliveryPolicyRequest();
-        // (ReflectionTestUtils로 값 설정 필요)
-        org.springframework.test.util.ReflectionTestUtils.setField(request, "standardShippingFee", 3000);
-        org.springframework.test.util.ReflectionTestUtils.setField(request, "minOrderAmount", 30000);
+        ReflectionTestUtils.setField(request, "standardShippingFee", 3000);
+        ReflectionTestUtils.setField(request, "minOrderAmount", 30000);
 
         // when & then
         mockMvc.perform(post("/api/admin/delivery-policies")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request))) // JSON 바디 전송
-                .andExpect(status().isCreated()); // 201 확인
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -64,7 +77,7 @@ class AdminDeliveryPolicyControllerTest {
         // when & then
         mockMvc.perform(get("/api/admin/delivery-policies/active"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.standardShippingFee").value(3000)) // 응답 JSON 필드 확인
+                .andExpect(jsonPath("$.standardShippingFee").value(3000))
                 .andExpect(jsonPath("$.isActive").value(true));
     }
 
@@ -73,6 +86,6 @@ class AdminDeliveryPolicyControllerTest {
     void deleteDeliveryPolicy() throws Exception {
         // when & then
         mockMvc.perform(delete("/api/admin/delivery-policies/{policyId}", 1L))
-                .andExpect(status().isNoContent()); // 204 확인
+                .andExpect(status().isNoContent());
     }
 }
