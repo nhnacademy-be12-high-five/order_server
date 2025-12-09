@@ -13,11 +13,16 @@ public interface BookClient {
     BookInfoResponse getBookInfo(@PathVariable("bookId") Long bookId);
 
     @PostMapping("/api/books/{bookId}/stock/hold")
-    void holdStock(@PathVariable("bookId") Long bookId, @RequestParam("quantity") Integer quantity);
+    void holdStock(@PathVariable("bookId") Long bookId,
+                   @RequestParam("quantity") Integer quantity,
+                   @RequestHeader("Idempotency-Key") String idempotencyKey);
 
     @PostMapping("/api/books/stock/confirm-deduction")
     void confirmStockDeduction(@RequestBody List<Long> bookIds);
 
     @PostMapping("/api/books/release-stock")
     void releaseHeldStock(@RequestBody List<Long> bookIds);
+
+    @PostMapping("/api/books/batch-info")
+    List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);
 }
