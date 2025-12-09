@@ -6,7 +6,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@FeignClient(name = "book-serivce", url = "${book.service.url}")
+@FeignClient(name = "book-service", url = "${book.service.url}")
 public interface BookClient {
 
     @GetMapping("/api/books/{bookId}/info")
@@ -17,4 +17,7 @@ public interface BookClient {
 
     @PostMapping("/api/books/stock/confirm-deduction")
     void confirmStockDeduction(@RequestBody List<Long> bookIds);
+
+    @PostMapping("/api/books/release-stock")
+    void releaseHeldStock(@RequestBody List<Long> bookIds);
 }

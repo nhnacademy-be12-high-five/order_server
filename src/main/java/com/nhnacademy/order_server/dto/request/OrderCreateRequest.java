@@ -27,7 +27,7 @@ public class OrderCreateRequest {
     private Long userId;
 
     @Schema(description = "비회원 주문 비밀번호 (회원은 null)", example = "1234")
-    private Integer orderPassword;
+    private String orderPassword;
 
     @NotBlank
     @Schema(description = "수령자 이름", example = "홍길동")
@@ -89,8 +89,7 @@ public class OrderCreateRequest {
         private int earnedPoint;
     }
 
-
-    public Order toEntity(OrderCalculationResult calculation, String orderKey) {
+    public Order toEntity(OrderCalculationResult calculation, String orderKey, String encryptedPassword) {
         return Order.builder()
                 .userId(this.userId)
                 .isMember(this.userId != null)
@@ -108,7 +107,8 @@ public class OrderCreateRequest {
 
                 .orderKey(orderKey)
 
-                .orderPassword(this.orderPassword)
+                // [수정] 암호화된 비밀번호 저장
+                .orderPassword(encryptedPassword)
                 .build();
     }
 }

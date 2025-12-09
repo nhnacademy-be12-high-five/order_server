@@ -31,7 +31,8 @@ public enum OrderErrorCode {
     // 500 INTERNAL_SERVER_ERROR (서버 내부 오류 (외부 연동 실패 등)
     COUPON_SERVICE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "쿠폰 서비스 연동 중 오류가 발생했습니다."),
     MEMBER_SERVICE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "회원 서비스 연동 중 오류가 발생했습니다."),
-    EXTERNAL_SERVICE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "외부 서비스 연동 중 오류가 발생했습니다.");
+    EXTERNAL_SERVICE_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "외부 서비스 연동 중 오류가 발생했습니다."),
+    DELIVERY_FEE_CALCULATION_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "배송비 계산 중 오류가 발생했습니다.");
 
     private final HttpStatus status;
     private final String message;

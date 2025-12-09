@@ -69,7 +69,7 @@ public class Order {
     private Long couponId;
 
     @Column(name = "ord_pw")
-    private Integer orderPassword;
+    private String orderPassword;
 
     @Column(name = "user_id")
     private Long userId;

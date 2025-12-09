@@ -1,6 +1,6 @@
 package com.nhnacademy.order_server.adapter;
 
-import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse; // DTO 정의 필요
+import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
 
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
@@ -16,4 +16,13 @@ public interface MemberClient {
 
     @PostMapping("/api/members/{userId}/point-deduct")
     void deductPoint(@PathVariable("userId") Long userId, @RequestParam("amount") Integer amount);
+
+    @PostMapping("/api/members/{userId}/point/reserve")
+    void reservePoint(@PathVariable("userId") Long userId, @RequestParam("amount") Integer amount);
+
+    @PostMapping("/api/members/{userId}/point/cancel")
+    void cancelPoint(@PathVariable("userId") Long userId, @RequestParam("amount") Integer amount);
+
+    @PostMapping("/api/members/{userId}/point/confirm")
+    void confirmPoint(@PathVariable("userId") Long userId, @RequestParam("amount") Integer amount);
 }
