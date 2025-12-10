@@ -29,18 +29,16 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     private static final int RETURN_SHIPPING_FEE = 5000;
 
     @Override
-    public OrderReturnCheckResponse checkReturnEligibility(Long orderId) {
+    public OrderReturnCheckResponse checkReturnEligibility(Long orderId, ReturnReason returnReason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getDeliveryStatus() != DeliveryStatus.COMPLETED) {
             return OrderReturnCheckResponse.ofIneligible("배송이 완료되지 않은 주문입니다.");
         }
-
         if (order.getOrderReturn() != null) {
             return OrderReturnCheckResponse.ofIneligible("이미 반품 접수된 주문입니다.");
         }
-
         if (order.getDelivery() == null || order.getDelivery().getActualShipDate() == null) {
             return OrderReturnCheckResponse.ofIneligible("배송 정보를 확인할 수 없습니다.");
         }
@@ -48,15 +46,30 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         LocalDateTime shipmentDate = order.getDelivery().getActualShipDate();
         long daysPassed = ChronoUnit.DAYS.between(shipmentDate, LocalDateTime.now());
 
-        if (daysPassed > 10) {
-            return OrderReturnCheckResponse.ofIneligible("반품 가능 기한(10일)이 지났습니다.");
+        int allowedDays = 30;
+        int estimatedFee = 0;
+
+        if (returnReason != null) {
+            if (returnReason == ReturnReason.SIMPLE_CHANGE) {
+                allowedDays = 10;
+                estimatedFee = RETURN_SHIPPING_FEE;
+            } else {
+                allowedDays = 30;
+                estimatedFee = 0;
+            }
+        } else {
+
+            allowedDays = 30;
+            estimatedFee = RETURN_SHIPPING_FEE;
         }
 
-        int returnFee = RETURN_SHIPPING_FEE;
+        if (daysPassed > allowedDays) {
+            return OrderReturnCheckResponse.ofIneligible("반품 가능 기한(" + allowedDays + "일)이 지났습니다.");
+        }
         int paymentAmount = order.getPaymentAmount();
-        int estimatedRefund = Math.max(paymentAmount - returnFee, 0);
+        int estimatedRefund = Math.max(paymentAmount - estimatedFee, 0);
 
-        return OrderReturnCheckResponse.ofEligible(estimatedRefund, returnFee);
+        return OrderReturnCheckResponse.ofEligible(estimatedRefund, estimatedFee);
     }
 
     @Override
@@ -75,8 +88,10 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         validateReturnPeriod(order, request.getReturnReason());
 
         int refundAmount = order.getPaymentAmount();
+        int appliedReturnFee = 0;
         if (request.getReturnReason() == ReturnReason.SIMPLE_CHANGE) {
-            refundAmount -= RETURN_SHIPPING_FEE;
+            appliedReturnFee = RETURN_SHIPPING_FEE;
+            refundAmount -= appliedReturnFee;
             if (refundAmount < 0) refundAmount = 0;
         }
 
@@ -85,6 +100,7 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 .returnReason(request.getReturnReason())
                 .description(request.getDescription())
                 .refundAmount(refundAmount)
+                .returnShippingFee(appliedReturnFee)
                 .build();
 
         orderReturnRepository.save(orderReturn);

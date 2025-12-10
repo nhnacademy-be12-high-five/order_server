@@ -22,6 +22,14 @@ public class OrderReturnCheckResponse {
     private String message;
 
     public static OrderReturnCheckResponse ofEligible(Integer estimatedRefundAmount, Integer estimatedReturnFee) {
+        if (estimatedRefundAmount != null && estimatedRefundAmount < 0){
+            throw new IllegalArgumentException("환불 금액은 음수일 수 없습니다.");
+        }
+
+        if (estimatedReturnFee != null && estimatedReturnFee < 0){
+            throw new IllegalArgumentException("반품 배송비는 음수일 수 없습니다.");
+        }
+
         return OrderReturnCheckResponse.builder()
                 .isEligible(true)
                 .estimatedRefundAmount(estimatedRefundAmount)
