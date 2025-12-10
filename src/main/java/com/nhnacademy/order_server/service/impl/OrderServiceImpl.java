@@ -56,6 +56,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public OrderCreateResponse createOrder(OrderCreateRequest request) {
 
+        // 1. [검증] 비회원 검증 및 비밀번호 암호화
         String encryptedPassword = null;
         if (request.getUserId() == null) {
             if (request.getOrderPassword() == null || request.getOrderPassword().isBlank()) {
@@ -67,8 +68,10 @@ public class OrderServiceImpl implements OrderService {
         Long userId = request.getUserId();
         int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
 
+        // 2. [MSA] 회원 등급별 적립률 조회
         double earnRate = getMemberEarnRate(userId);
 
+        // 3. [동시성 제어] 포인트 선점
         if (userId != null && usedPoint > 0) {
             try {
                 memberClient.reservePoint(userId, usedPoint);
@@ -80,9 +83,19 @@ public class OrderServiceImpl implements OrderService {
 
         String orderKey = UUID.randomUUID().toString();
 
+        // [추가] 롤백을 위해, 가차감에 성공한 도서 ID들을 추적할 리스트
+        List<Long> heldStockBookIds = new ArrayList<>();
+
         try {
+            // 4. [Saga] 상품 검증 및 재고 가차감
             OrderCalculationData orderData = calculateAndValidateOrderItems(request, earnRate, orderKey);
 
+            // [추가] 재고 가차감이 성공했다면, 롤백용 리스트에 ID 담기
+            heldStockBookIds = orderData.getTempOrderItems().stream()
+                    .map(OrderItem::getBookId)
+                    .collect(Collectors.toList());
+
+            // 5. [예외처리] 배송비 계산 (여기서 에러가 나면 catch로 이동)
             int deliveryFee;
             try {
                 deliveryFee = deliveryService.calculateDeliveryFee(orderData.getTotalProductAmount(), request.getReceiverAddress());
@@ -91,9 +104,11 @@ public class OrderServiceImpl implements OrderService {
                 throw new OrderException(OrderErrorCode.DELIVERY_FEE_CALCULATION_ERROR);
             }
 
+            // 6. [계산] 최종 할인 및 금액 계산
             OrderCreateRequest.OrderCalculationResult calculationResult = calculateFinalAmounts(
                     request, orderData.getTotalProductAmount(), orderData.getTotalWrappingFee(), deliveryFee, orderData.getTotalEarnedPoint());
 
+            // ... (저장 로직 생략) ...
             Order order = request.toEntity(calculationResult, orderKey, encryptedPassword);
             for (OrderItem item : orderData.getTempOrderItems()) {
                 order.addOrderItem(item);
@@ -125,6 +140,7 @@ public class OrderServiceImpl implements OrderService {
             return OrderCreateResponse.from(order, firstBookTitle, request.getOrderItems().size());
 
         } catch (Exception e) {
+            // [보상 트랜잭션 1] 포인트 예약 취소
             if (userId != null && usedPoint > 0) {
                 try {
                     memberClient.cancelPoint(userId, usedPoint);
@@ -132,6 +148,18 @@ public class OrderServiceImpl implements OrderService {
                     log.error("CRITICAL: 포인트 예약 취소 실패! UserID={}, Amount={}", userId, usedPoint, cancelEx);
                 }
             }
+
+            // [보상 트랜잭션 2 - 추가] 재고 가차감 롤백
+            // calculateAndValidateOrderItems는 통과했으나(재고 잡힘), 이후 로직(배송비 등)에서 실패한 경우 수행
+            if (!heldStockBookIds.isEmpty()) {
+                try {
+                    log.info("주문 생성 중 예외 발생. 재고 롤백 시도: {}", heldStockBookIds);
+                    bookClient.releaseHeldStock(heldStockBookIds);
+                } catch (Exception releaseEx) {
+                    log.error("CRITICAL: 재고 롤백 실패. 수동 복구 필요. IDs={}", heldStockBookIds, releaseEx);
+                }
+            }
+
             throw e;
         }
     }
