@@ -18,7 +18,5 @@ public interface OrderService {
     Page<OrderResponse> getMyOrders(Long userId, Pageable pageable);
     OrderResponse getOrderDetail(Long orderId);
     OrderResponse getGuestOrder(Long orderId, Integer password);
-    void cancelOrder(Long orderId);
-    OrderReturnCheckResponse checkReturn(Long orderId);
-    void requestReturn(Long orderId, OrderReturnRequest request);
+
 }

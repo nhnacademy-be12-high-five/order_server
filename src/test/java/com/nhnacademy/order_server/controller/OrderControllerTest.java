@@ -7,6 +7,7 @@ import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
 import com.nhnacademy.order_server.dto.response.*;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import com.nhnacademy.order_server.service.OrderService;
+import com.nhnacademy.order_server.service.WrapperService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +51,9 @@ class OrderControllerTest {
 
     @MockitoBean
     private OrderService orderService;
+
+    @MockitoBean
+    private WrapperService wrapperService;
 
     @MockitoBean
     private RedisConnectionFactory redisConnectionFactory;

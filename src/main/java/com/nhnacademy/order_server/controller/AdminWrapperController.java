@@ -1,6 +1,6 @@
 package com.nhnacademy.order_server.controller;
 
-import com.nhnacademy.order_server.controller.docs.AdminWrapperControllerDocs;
+import com.nhnacademy.order_server.controller.swagger.AdminWrapperControllerDocs;
 import com.nhnacademy.order_server.dto.request.WrapperRegisterRequest;
 import com.nhnacademy.order_server.dto.response.WrapperResponse;
 import com.nhnacademy.order_server.service.WrapperService;

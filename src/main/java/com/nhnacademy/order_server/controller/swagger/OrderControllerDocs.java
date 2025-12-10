@@ -1,4 +1,4 @@
-package com.nhnacademy.order_server.controller.docs;
+package com.nhnacademy.order_server.controller.swagger;
 
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
@@ -72,18 +72,6 @@ public interface OrderControllerDocs {
             @ApiResponse(responseCode = "404", description = "주문 번호가 없거나 비밀번호가 일치하지 않음 (보안상 404로 통일)")
     })
     ResponseEntity<OrderResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request);
-
-
-    @Operation(summary = "주문 취소", description = "배송 시작 전 주문을 취소합니다.")
-    ResponseEntity<Void> cancelOrder(@Parameter(description = "주문 번호") Long orderId);
-
-    @Operation(summary = "반품 가능 여부 확인", description = "주문의 상태와 날짜를 기반으로 반품 가능 여부를 확인합니다.")
-    ResponseEntity<OrderReturnCheckResponse> checkReturnEligibility(@Parameter(description = "주문 번호") Long orderId);
-
-    @Operation(summary = "반품 신청", description = "반품 사유와 함께 반품을 접수합니다.")
-    ResponseEntity<Void> requestReturn(
-            @Parameter(description = "주문 번호") Long orderId,
-            @RequestBody OrderReturnRequest request);
 
     @Operation(summary = "포장지 목록 조회", description = "주문 시 선택 가능한 포장지 옵션을 조회합니다.")
     ResponseEntity<List<WrapperResponse>> getWrappers();

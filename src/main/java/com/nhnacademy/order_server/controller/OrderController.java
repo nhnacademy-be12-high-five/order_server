@@ -1,11 +1,11 @@
 package com.nhnacademy.order_server.controller;
 
-import com.nhnacademy.order_server.controller.docs.OrderControllerDocs;
+import com.nhnacademy.order_server.controller.swagger.OrderControllerDocs;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
-import com.nhnacademy.order_server.dto.request.OrderReturnRequest;
 import com.nhnacademy.order_server.dto.response.*;
 import com.nhnacademy.order_server.service.OrderService;
+import com.nhnacademy.order_server.service.WrapperService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -22,6 +22,7 @@ import java.util.List;
 public class OrderController implements OrderControllerDocs {
 
     private final OrderService orderService;
+    private final WrapperService wrapperService;
 
     @Override
     @PostMapping
@@ -66,30 +67,8 @@ public class OrderController implements OrderControllerDocs {
     }
 
     @Override
-    @DeleteMapping("/{orderId}")
-    public ResponseEntity<Void> cancelOrder(@PathVariable Long orderId) {
-        orderService.cancelOrder(orderId);
-        return ResponseEntity.ok().build();
-    }
-
-    @Override
-    @GetMapping("/{orderId}/returns/eligibility")
-    public ResponseEntity<OrderReturnCheckResponse> checkReturnEligibility(@PathVariable Long orderId) {
-        return ResponseEntity.ok(orderService.checkReturn(orderId));
-    }
-
-    @Override
-    @PostMapping("/{orderId}/returns")
-    public ResponseEntity<Void> requestReturn(@PathVariable Long orderId, @RequestBody OrderReturnRequest request) {
-        orderService.requestReturn(orderId, request);
-        return ResponseEntity.ok().build();
-    }
-
-    @Override
     @GetMapping("/wrappers")
     public ResponseEntity<List<WrapperResponse>> getWrappers() {
-        return ResponseEntity.ok(List.of(
-                WrapperResponse.builder().id(1L).name("일반 포장").price(1000).build()
-        ));
+        return ResponseEntity.ok(wrapperService.getAvailableWrappers());
     }
 }
