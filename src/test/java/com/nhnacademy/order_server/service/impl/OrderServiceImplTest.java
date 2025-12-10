@@ -410,4 +410,22 @@ class OrderServiceImplTest {
             assertThat(ex.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND);
         }
     }
+
+    @Test
+    @DisplayName("실패: 배송비 계산 실패 (보상 트랜잭션: 재고 + 포인트 모두 롤백)")
+    void fail_DeliveryFee_FullCompensation() {
+        // Given
+        ReflectionTestUtils.setField(request, "usedPoint", 1000);
+
+        when(deliveryService.calculateDeliveryFee(anyInt(), anyString()))
+                .thenThrow(new RuntimeException("Delivery Service Error"));
+
+        // When & Then
+        OrderException ex = assertThrows(OrderException.class,
+                () -> orderService.createOrder(request));
+
+        // [검증] 재고 롤백과 포인트 취소 모두 호출되어야 함
+        verify(bookClient).releaseHeldStock(anyList());
+        verify(memberClient).cancelPoint(100L, 1000);
+    }
 }

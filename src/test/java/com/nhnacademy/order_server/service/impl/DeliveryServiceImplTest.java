@@ -68,6 +68,21 @@ class DeliveryServiceImplTest {
     }
 
     @Test
+    @DisplayName("성공: 경계값 테스트 (기준 금액과 동일)")
+    void calculateDeliveryFee_Boundary_ExactAmount() {
+        // Given
+        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        int productAmount = 30000; // 정확히 기준 금액
+        String address = "서울시 강남구";
+
+        // When
+        int fee = deliveryService.calculateDeliveryFee(productAmount, address);
+
+        // Then
+        assertThat(fee).isEqualTo(0); // >= 조건이면 무료
+    }
+
+    @Test
     @DisplayName("성공: 도서산간 추가 요금 부과 (기준 금액 미만, 제주도)")
     void calculateDeliveryFee_Remote_Jeju() {
         // Given

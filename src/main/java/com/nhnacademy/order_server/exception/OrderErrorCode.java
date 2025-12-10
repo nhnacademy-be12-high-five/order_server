@@ -19,6 +19,7 @@ public enum OrderErrorCode {
     PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST, "결제 금액이 일치하지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "유효하지 않은 요청입니다. 입력값을 확인해주세요."),
     NOT_ENOUGH_POINT(HttpStatus.BAD_REQUEST, "포인트가 부족합니다."),
+    INVALID_ORDER_STATE(HttpStatus.BAD_REQUEST, "유효하지 않은 주문 상태입니다."),
 
     // 404 NOT_FOUND (리소스 없음)
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),
