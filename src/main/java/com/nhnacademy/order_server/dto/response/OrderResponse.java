@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -31,14 +32,19 @@ public class OrderResponse {
     private List<OrderItemResponse> items;
 
     public static OrderResponse from(Order order) {
+
+        List<OrderItemResponse> itemResponses = order.getOrderItems() != null
+                ? order.getOrderItems().stream()
+                    .map(OrderItemResponse::from)
+                    .toList()
+                : Collections.emptyList();
+
         return OrderResponse.builder()
                 .orderId(order.getId())
                 .orderDate(order.getOrderDate())
-                .status(order.getDeliveryStatus().name()) // Enum -> String 변환
+                .status(order.getDeliveryStatus() != null ? order.getDeliveryStatus().name() : "UNKNOWN")
                 .totalAmount(order.getPaymentAmount())
-                .items(order.getOrderItems().stream()
-                        .map(OrderItemResponse::from) // 아래의 from 메서드 호출
-                        .collect(Collectors.toList()))
+                .items(itemResponses)
                 .build();
     }
 
