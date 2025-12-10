@@ -251,7 +251,7 @@ public class OrderServiceImpl implements OrderService {
                 }
 
                 totalProductAmount += bookPrice * itemReq.getQuantity();
-                tempOrderItems.add(itemReq.toEntity(bookPrice, wrapper));
+                tempOrderItems.add(itemReq.toEntity(bookPrice, bookInfo.getTitle(),wrapper));
             }
         } catch (Exception e) {
             if (!heldBookIds.isEmpty()) {
@@ -326,15 +326,45 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    @Override public Page<OrderResponse> getMyOrders(Long userId, Pageable pageable) { return Page.empty(); }
-    @Override public OrderResponse getOrderDetail(Long orderId) { return OrderResponse.builder().build(); }
-    @Override public OrderResponse getGuestOrder(Long orderId, Integer password) { return OrderResponse.builder().build(); }
+    @Override
+    public Page<OrderResponse> getMyOrders(Long userId, Pageable pageable) {
+        Page<Order> orders = orderRepository.findAllByUserId(userId, pageable);
+        return orders.map(OrderResponse::from);
+    }
+
+    /**
+     * 2. 주문 상세 조회 (N+1 최적화)
+     */
+    @Override
+    public OrderResponse getOrderDetail(Long orderId) {
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND)); // [수정] 에러 코드로 변경
+
+        return OrderResponse.from(order);
+    }
+
+    /**
+     * 3. 비회원 주문 조회 (인증 포함)
+     */
+    @Override
+    public OrderResponse getGuestOrder(Long orderId, Integer password) {
+        // 주문번호와 비밀번호가 일치하는지 DB 레벨에서 검증하며 조회
+        Order order = orderRepository.findByIdAndOrderPassword(orderId, password)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND)); // [수정] 에러 코드로 변경 (보안상 상세 사유 미노출)
+
+        return OrderResponse.from(order);
+    }
     @Override public void cancelOrder(Long orderId) {}
     @Override public OrderReturnCheckResponse checkReturn(Long orderId) { return OrderReturnCheckResponse.builder().isEligible(true).build(); }
     @Override public void requestReturn(Long orderId, OrderReturnRequest request) {}
-    @Override public OrderValidationInfoResponse getValidationInfo(Long orderId) {
-        Order order = orderRepository.findById(orderId)
+
+    @Override
+    public OrderValidationInfoResponse getValidationInfo(String orderKey) {
+        // [수정] orderKey로 조회하도록 변경
+        Order order = orderRepository.findByOrderKey(orderKey)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        // from 메서드 내부에서 usedPoint 매핑됨
         return OrderValidationInfoResponse.from(order);
     }
 }
