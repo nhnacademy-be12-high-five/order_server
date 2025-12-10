@@ -18,6 +18,24 @@ public class OrderReturnCheckResponse {
     @Schema(description = "예상 환불 금액")
     private Integer estimatedRefundAmount;
 
-    @Schema(description = "불가 사유 (가능하면 null)", example = "반품 기한 30일 경과")
+    @Schema(description = "불가 사유 (가능하면 null)", example = "반품 기한 10일 경과")
     private String message;
+
+    public static OrderReturnCheckResponse ofEligible(Integer estimatedRefundAmount, Integer estimatedReturnFee) {
+        return OrderReturnCheckResponse.builder()
+                .isEligible(true)
+                .estimatedRefundAmount(estimatedRefundAmount)
+                .estimatedReturnFee(estimatedReturnFee)
+                .message(null)
+                .build();
+    }
+
+    public static OrderReturnCheckResponse ofIneligible(String message) {
+        return OrderReturnCheckResponse.builder()
+                .isEligible(false)
+                .estimatedReturnFee(null)
+                .estimatedRefundAmount(null)
+                .message(message)
+                .build();
+    }
 }

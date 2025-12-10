@@ -1,6 +1,6 @@
 package com.nhnacademy.order_server.controller;
 
-import com.nhnacademy.order_server.controller.docs.AdminOrderControllerDocs;
+import com.nhnacademy.order_server.controller.swagger.AdminOrderControllerDocs;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import lombok.RequiredArgsConstructor;

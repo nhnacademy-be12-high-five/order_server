@@ -1,4 +1,4 @@
-package com.nhnacademy.order_server.controller.docs;
+package com.nhnacademy.order_server.controller.swagger;
 
 import com.nhnacademy.order_server.dto.request.WrapperRegisterRequest;
 import com.nhnacademy.order_server.dto.response.WrapperResponse;

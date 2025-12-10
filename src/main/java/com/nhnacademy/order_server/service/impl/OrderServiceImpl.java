@@ -14,10 +14,12 @@ import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
 import com.nhnacademy.order_server.entity.*;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
+import com.nhnacademy.order_server.entity.enums.ReturnReason;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryRepository;
 import com.nhnacademy.order_server.repository.OrderRepository;
+import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -44,6 +48,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final DeliveryRepository deliveryRepository;
     private final WrapperRepository wrapperRepository;
+    private final OrderReturnRepository orderReturnRepository;
     private final DeliveryService deliveryService;
 
     private final BookClient bookClient;
@@ -51,6 +56,8 @@ public class OrderServiceImpl implements OrderService {
     private final MemberClient memberClient;
     private final CartClient cartClient;
     private final PasswordEncoder passwordEncoder;
+
+    private static final int RETURN_SHIPPING_FEE = 5000;
 
     @Override
     @Transactional
@@ -251,7 +258,7 @@ public class OrderServiceImpl implements OrderService {
                 }
 
                 totalProductAmount += bookPrice * itemReq.getQuantity();
-                tempOrderItems.add(itemReq.toEntity(bookPrice, bookInfo.getTitle(),wrapper));
+                tempOrderItems.add(itemReq.toEntity(bookPrice, bookInfo.getTitle(), wrapper));
             }
         } catch (Exception e) {
             if (!heldBookIds.isEmpty()) {
@@ -332,9 +339,6 @@ public class OrderServiceImpl implements OrderService {
         return orders.map(OrderResponse::from);
     }
 
-    /**
-     * 2. 주문 상세 조회 (N+1 최적화)
-     */
     @Override
     public OrderResponse getOrderDetail(Long orderId) {
         Order order = orderRepository.findByIdWithItems(orderId)
@@ -343,9 +347,6 @@ public class OrderServiceImpl implements OrderService {
         return OrderResponse.from(order);
     }
 
-    /**
-     * 3. 비회원 주문 조회 (인증 포함)
-     */
     @Override
     public OrderResponse getGuestOrder(Long orderId, Integer password) {
         // 주문번호와 비밀번호가 일치하는지 DB 레벨에서 검증하며 조회
@@ -354,17 +355,12 @@ public class OrderServiceImpl implements OrderService {
 
         return OrderResponse.from(order);
     }
-    @Override public void cancelOrder(Long orderId) {}
-    @Override public OrderReturnCheckResponse checkReturn(Long orderId) { return OrderReturnCheckResponse.builder().isEligible(true).build(); }
-    @Override public void requestReturn(Long orderId, OrderReturnRequest request) {}
 
     @Override
     public OrderValidationInfoResponse getValidationInfo(String orderKey) {
-        // [수정] orderKey로 조회하도록 변경
         Order order = orderRepository.findByOrderKey(orderKey)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        // from 메서드 내부에서 usedPoint 매핑됨
         return OrderValidationInfoResponse.from(order);
     }
 }

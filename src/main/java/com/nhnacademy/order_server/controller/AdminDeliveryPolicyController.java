@@ -1,6 +1,6 @@
 package com.nhnacademy.order_server.controller;
 
-import com.nhnacademy.order_server.controller.docs.AdminDeliveryPolicyControllerDocs;
+import com.nhnacademy.order_server.controller.swagger.AdminDeliveryPolicyControllerDocs;
 import com.nhnacademy.order_server.dto.request.DeliveryPolicyRequest;
 import com.nhnacademy.order_server.dto.response.DeliveryPolicyResponse;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;

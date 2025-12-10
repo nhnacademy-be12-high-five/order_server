@@ -5,6 +5,7 @@ public enum DeliveryStatus {
     WAITING,
     DELIVERING,
     COMPLETED,
+    RETURN_REQUESTED,
     RETURN,
     CANCELED
 }
