@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemRequest;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
+import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import com.nhnacademy.order_server.service.OrderService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +23,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,17 +48,14 @@ class OrderControllerTest {
     @MockitoBean
     private OrderService orderService;
 
-    // [필수] RedisConfig 로딩 에러 방지용 가짜 객체
     @MockitoBean
     private RedisConnectionFactory redisConnectionFactory;
 
     @Test
-    @DisplayName("주문 생성 요청 성공 (201 Created)")
+    @DisplayName("[POST] 주문 생성 성공 (201 Created)")
     void createOrder() throws Exception {
         // given
         OrderCreateRequest request = new OrderCreateRequest();
-
-        // DTO에 Setter가 없으므로 ReflectionTestUtils로 값 주입
         ReflectionTestUtils.setField(request, "userId", 1L);
         ReflectionTestUtils.setField(request, "receiverName", "홍길동");
         ReflectionTestUtils.setField(request, "receiverAddress", "서울시 강남구");
@@ -65,11 +65,9 @@ class OrderControllerTest {
         ReflectionTestUtils.setField(item, "quantity", 2);
         ReflectionTestUtils.setField(request, "orderItems", List.of(item));
 
-        // 서비스가 반환할 응답 Mocking
         OrderCreateResponse response = OrderCreateResponse.builder()
                 .orderId(1L)
                 .orderKey("test-uuid-1234")
-                .orderName("자바의 정석 외 0건")
                 .totalAmount(30000)
                 .build();
 
@@ -79,26 +77,55 @@ class OrderControllerTest {
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated()) // 201 확인
+                .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.orderId").value(1L))
                 .andExpect(jsonPath("$.orderKey").value("test-uuid-1234"))
-                .andExpect(jsonPath("$.totalAmount").value(30000));
+                .andExpect(jsonPath("$.totalAmount").value(30000))
+                .andDo(print());
     }
 
     @Test
-    @DisplayName("결제 성공 통보 처리 성공 (200 OK)")
+    @DisplayName("[POST] 결제 완료 처리 성공 (200 OK)")
     void paymentSuccess() throws Exception {
         // given
         Long orderId = 1L;
         String paymentKey = "toss_payment_key_xyz";
 
         // when & then
-        mockMvc.perform(post("/api/orders/{orderId}/payment-success", orderId)
-                        .param("paymentKey", paymentKey) // 쿼리 파라미터로 전송
+        // RESTful URL: /api/orders/{orderId}/payments
+        mockMvc.perform(post("/api/orders/{orderId}/payments", orderId)
+                        .param("paymentKey", paymentKey)
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk()); // 200 확인
+                .andExpect(status().isOk())
+                .andDo(print());
 
-        // Verify: 서비스 메서드가 올바른 파라미터로 호출되었는지 검증
+        // Verify Service Call
         verify(orderService).paymentSuccess(eq(orderId), eq(paymentKey));
+    }
+
+    @Test
+    @DisplayName("[GET] 결제 검증 정보 조회 성공 (200 OK)")
+    void getPaymentInfo() throws Exception {
+        // given
+        Long orderId = 1L;
+        OrderValidationInfoResponse response = OrderValidationInfoResponse.builder()
+                .orderId(orderId)
+                .paymentAmount(30000) // DTO 필드명 수정 반영 (realAmount -> paymentAmount)
+                .orderKey("test-uuid-1234")
+                .userId(100L)         // DTO 필드명 수정 반영 (memberId -> userId)
+                .build();
+
+        given(orderService.getValidationInfo(eq(orderId))).willReturn(response);
+
+        // when & then
+        // RESTful URL: /api/orders/{orderId}/payments
+        mockMvc.perform(get("/api/orders/{orderId}/payments", orderId)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(orderId))
+                .andExpect(jsonPath("$.paymentAmount").value(30000))
+                .andExpect(jsonPath("$.orderKey").value("test-uuid-1234"))
+                .andExpect(jsonPath("$.userId").value(100L))
+                .andDo(print());
     }
 }

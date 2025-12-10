@@ -7,17 +7,18 @@ import lombok.Getter;
 @Getter
 @Builder
 public class OrderValidationInfoResponse {
+
     private Long orderId;
-    private Integer realAmount;
+    private Integer paymentAmount;
     private String orderKey;
-    private Long memberId;
+    private Long userId;
 
     public static OrderValidationInfoResponse from(Order order) {
         return OrderValidationInfoResponse.builder()
                 .orderId(order.getId())
-                .realAmount(order.getPaymentAmount())
+                .paymentAmount(order.getPaymentAmount())
                 .orderKey(order.getOrderKey())
-                .memberId(order.getUserId())
+                .userId(order.getUserId())
                 .build();
     }
 }
