@@ -14,18 +14,15 @@ public class OrderValidationInfoResponse {
     private Integer paymentAmount;
     private String orderKey;
     private Long userId;
+    private Integer usedPoint;
 
     public static OrderValidationInfoResponse from(Order order) {
-
-        if (order.getPaymentAmount() == null) {
-            throw new OrderException(OrderErrorCode.INVALID_ORDER_STATE);
-        }
-
         return OrderValidationInfoResponse.builder()
                 .orderId(order.getId())
                 .paymentAmount(order.getPaymentAmount())
                 .orderKey(order.getOrderKey())
                 .userId(order.getUserId())
+                .usedPoint(order.getPointDiscount() != null ? order.getPointDiscount() : 0)
                 .build();
     }
 }

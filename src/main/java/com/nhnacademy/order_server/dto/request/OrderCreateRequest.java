@@ -65,9 +65,10 @@ public class OrderCreateRequest {
         @Schema(description = "선택한 포장지 ID (없으면 null)")
         private Long wrapperId;
 
-        public OrderItem toEntity(int bookPrice, Wrapper wrapper) {
+        public OrderItem toEntity(int bookPrice, String bookTitle, Wrapper wrapper) {
             return OrderItem.builder()
                     .bookId(this.bookId)
+                    .bookTitle(bookTitle)
                     .quantity(this.quantity)
                     .unitPrice(bookPrice)
                     .wrapper(wrapper)

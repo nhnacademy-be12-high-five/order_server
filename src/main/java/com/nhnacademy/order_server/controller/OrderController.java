@@ -40,19 +40,18 @@ public class OrderController implements OrderControllerDocs {
     }
 
     @Override
-    @GetMapping("/{orderId}/payments")
-    public ResponseEntity<OrderValidationInfoResponse> getPaymentInfo(@PathVariable Long orderId) {
-        return ResponseEntity.ok(orderService.getValidationInfo(orderId));
+    @GetMapping("/{orderKey}/payments")
+    public ResponseEntity<OrderValidationInfoResponse> getPaymentInfo(@PathVariable String orderKey) {
+        return ResponseEntity.ok(orderService.getValidationInfo(orderKey));
     }
 
     @Override
     @GetMapping
     public ResponseEntity<Page<OrderResponse>> getMyOrders(
-            @RequestHeader(value = "X-USER-ID", required = false) Long userId,
+            @RequestHeader(value = "X-USER-ID") Long userId,
             Pageable pageable) {
         return ResponseEntity.ok(orderService.getMyOrders(userId, pageable));
     }
-
 
     @Override
     @GetMapping("/{orderId}")
@@ -73,13 +72,11 @@ public class OrderController implements OrderControllerDocs {
         return ResponseEntity.ok().build();
     }
 
-
     @Override
     @GetMapping("/{orderId}/returns/eligibility")
     public ResponseEntity<OrderReturnCheckResponse> checkReturnEligibility(@PathVariable Long orderId) {
         return ResponseEntity.ok(orderService.checkReturn(orderId));
     }
-
 
     @Override
     @PostMapping("/{orderId}/returns")
