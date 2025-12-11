@@ -15,6 +15,7 @@ import org.springframework.test.context.TestPropertySource;
         "coupon.service.url=http://localhost:8082",
         "member.service.url=http://localhost:8083",
         "cart.service.url=http://localhost:8084",
+        "payment.service.url=http://localhost:8085"
 })
 class OrderServerApplicationTests {
 

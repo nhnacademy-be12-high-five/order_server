@@ -1,9 +1,6 @@
 package com.nhnacademy.order_server.service.impl;
 
-import com.nhnacademy.order_server.adapter.BookClient;
-import com.nhnacademy.order_server.adapter.CartClient;
-import com.nhnacademy.order_server.adapter.CouponClient;
-import com.nhnacademy.order_server.adapter.MemberClient;
+import com.nhnacademy.order_server.adapter.*;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemRequest;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
@@ -59,6 +56,7 @@ class OrderServiceImplTest {
     @Mock private BookClient bookClient;
     @Mock private CouponClient couponClient;
     @Mock private MemberClient memberClient;
+    @Mock private PaymentClient paymentClient;
     @Mock private CartClient cartClient;
     @Mock private PasswordEncoder passwordEncoder;
 
