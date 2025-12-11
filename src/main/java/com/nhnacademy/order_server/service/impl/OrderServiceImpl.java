@@ -22,7 +22,6 @@ import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
 import lombok.Builder;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -75,21 +74,21 @@ public class OrderServiceImpl implements OrderService {
             OrderCalculationData orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
 
             heldStockBookIds.addAll(
-                    orderData.getTempOrderItems().stream()
+                    orderData.tempOrderItems().stream()
                             .map(OrderItem::getBookId)
                             .toList()
             );
 
-            int deliveryFee = calculateDeliveryFee(orderData.getTotalProductAmount(), request.getReceiverAddress());
+            int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
             OrderCreateRequest.OrderCalculationResult calculationResult = calculateFinalAmounts(
                     request, orderData, deliveryFee);
 
-            Order order = saveOrder(request, calculationResult, orderKey, encryptedPassword, orderData.getTempOrderItems());
+            Order order = saveOrder(request, calculationResult, orderKey, encryptedPassword, orderData.tempOrderItems());
             saveDelivery(order, request.getRequestDeliveryDate());
 
             clearCartSilently(userId);
 
-            return createOrderResponse(order, orderData.getFirstBookTitle(), request.getOrderItems().size());
+            return createOrderResponse(order, orderData.firstBookTitle(), request.getOrderItems().size());
 
         } catch (Exception e) {
             compensateTransaction(userId, usedPoint, heldStockBookIds, e);
@@ -251,24 +250,24 @@ public class OrderServiceImpl implements OrderService {
         int couponDiscount = 0;
         if (request.getCouponId() != null) {
             try {
-                couponDiscount = couponClient.calculateDiscount(request.getCouponId(), data.getTotalProductAmount());
+                couponDiscount = couponClient.calculateDiscount(request.getCouponId(), data.totalProductAmount());
             } catch (Exception e) {
                 throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
             }
-            couponDiscount = Math.min(couponDiscount, data.getTotalProductAmount());
+            couponDiscount = Math.min(couponDiscount, data.totalProductAmount());
         }
 
         int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
-        int finalPaymentAmount = Math.max(0, (data.getTotalProductAmount() + data.getTotalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
+        int finalPaymentAmount = Math.max(0, (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
 
         return OrderCreateRequest.OrderCalculationResult.builder()
-                .productAmount(data.getTotalProductAmount())
+                .productAmount(data.totalProductAmount())
                 .deliveryFee(deliveryFee)
-                .wrappingFee(data.getTotalWrappingFee())
+                .wrappingFee(data.totalWrappingFee())
                 .couponDiscount(couponDiscount)
                 .pointDiscount(usedPoint)
                 .paymentAmount(finalPaymentAmount)
-                .earnedPoint(data.getTotalEarnedPoint())
+                .earnedPoint(data.totalEarnedPoint())
                 .build();
     }
 
@@ -473,13 +472,8 @@ public class OrderServiceImpl implements OrderService {
         return OrderValidationInfoResponse.from(order);
     }
 
-    @Getter
     @Builder
-    private static class OrderCalculationData {
-        private final List<OrderItem> tempOrderItems;
-        private final int totalProductAmount;
-        private final int totalWrappingFee;
-        private final int totalEarnedPoint;
-        private final String firstBookTitle;
+        private record OrderCalculationData(List<OrderItem> tempOrderItems, int totalProductAmount, int totalWrappingFee,
+                                            int totalEarnedPoint, String firstBookTitle) {
     }
 }
