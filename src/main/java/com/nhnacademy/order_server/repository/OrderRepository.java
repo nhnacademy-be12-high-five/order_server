@@ -1,6 +1,7 @@
 package com.nhnacademy.order_server.repository;
 
 import com.nhnacademy.order_server.entity.Order;
+import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,4 +23,6 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     Optional<Order> findByIdAndOrderPassword(@Param("orderId") Long orderId, @Param("password") Integer password);
 
     Optional<Order> findByOrderKey(String orderKey);
+
+    Page<Order> findByDeliveryStatus(DeliveryStatus deliveryStatus, Pageable pageable);
 }

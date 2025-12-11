@@ -25,4 +25,7 @@ public interface BookClient {
 
     @PostMapping("/api/books/batch-info")
     List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);
+
+    @PostMapping("/api/books/stock/restore")
+    void restoreStock(@RequestBody List<Long> bookIds);
 }

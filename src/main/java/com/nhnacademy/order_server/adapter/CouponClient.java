@@ -11,4 +11,7 @@ public interface CouponClient {
 
     @PostMapping("/api/coupons/{couponId}/use-confirm")
     void useCoupon(@PathVariable("couponId") Long couponId);
+
+    @PostMapping("/api/coupons/{couponId}/cancel-use")
+    void cancelCouponUsage(@PathVariable("couponId") Long couponId);
 }

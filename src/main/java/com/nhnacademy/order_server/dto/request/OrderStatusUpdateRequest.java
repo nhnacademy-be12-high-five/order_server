@@ -14,4 +14,7 @@ public class OrderStatusUpdateRequest {
     @NotNull
     @Schema(description = "변경할 상태 (WAITING, DELIVERING, COMPLETED ...)", example = "DELIVERING")
     private String status;
+
+    @Schema(description = "운송장 번호 (배송 시작 시 필수)", example = "1234567890")
+    private String trackingNumber;
 }
