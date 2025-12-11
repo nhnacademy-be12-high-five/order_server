@@ -35,10 +35,10 @@ public class Delivery {
     @Column(name = "act_comp_dt")
     private LocalDateTime actualCompletionDate;
 
-    @Column(name = "tracking_no", nullable = false)
+    @Column(name = "tracking_no")
     private String trackingNumber;
 
-    public void updateTrackingNumber(String trackingNumber) {
+    public void startDelivery(String trackingNumber) {
         this.trackingNumber = trackingNumber;
         this.actualShipDate = LocalDateTime.now();
     }

@@ -300,10 +300,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderCreateResponse createOrderResponse(Order order, String firstBookTitle, int totalItems) {
-        String name = firstBookTitle;
-        if (totalItems > 1) {
-            name += " 외 " + (totalItems - 1) + "건";
-        }
+
         return OrderCreateResponse.from(order, firstBookTitle, totalItems);
     }
 
@@ -348,58 +345,95 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void finalizeExternalResources(Order order) {
+        List<String> failedOperations = new ArrayList<>();
+
+        // 1. 재고 확정 (독립 처리)
         try {
-            // 재고 확정
             List<Long> bookIds = order.getOrderItems().stream()
                     .map(OrderItem::getBookId)
                     .toList();
             bookClient.confirmStockDeduction(bookIds);
-
-            // 쿠폰 사용
-            if (order.getCouponId() != null) {
-                couponClient.useCoupon(order.getCouponId());
-            }
-
-            // 포인트 확정
-            if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
-                memberClient.confirmPoint(order.getUserId(), order.getPointDiscount());
-            }
         } catch (Exception e) {
-            log.error("CRITICAL: 결제 후처리(재고/쿠폰/포인트 확정) 실패. OrderID={}", order.getId(), e);
-            // 이미 결제는 승인되었으므로 트랜잭션을 롤백하거나 별도 조치가 필요함.
-            // 여기서는 예외를 던져 상위에서 처리하도록 함.
-            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
+            log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+            failedOperations.add("STOCK");
+        }
+
+        // 2. 쿠폰 사용 (독립 처리)
+        if (order.getCouponId() != null) {
+            try {
+                couponClient.useCoupon(order.getCouponId());
+            } catch (Exception e) {
+                log.error("쿠폰 사용 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+                failedOperations.add("COUPON");
+            }
+        }
+
+        // 3. 포인트 확정 (독립 처리)
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+            try {
+                memberClient.confirmPoint(order.getUserId(), order.getPointDiscount());
+            } catch (Exception e) {
+                log.error("포인트 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+                failedOperations.add("POINT");
+            }
+        }
+
+        // 4. 실패 내역이 있다면 주문 엔티티에 저장 (추후 재처리 위함)
+        if (!failedOperations.isEmpty()) {
+            log.warn("주문 후처리 일부 실패. 재처리 필요 항목: {}", failedOperations);
+            order.setPendingOperations(failedOperations);
+            // 필요 시 주문 상태를 'PARTIAL_COMPLETED' 등으로 변경하거나 알림 전송 로직 추가 가능
         }
     }
-
-    // =========================================================================
-    // Private Helper Methods (Cancel Order)
-    // =========================================================================
 
     private boolean isCancelable(DeliveryStatus status) {
         return status == DeliveryStatus.WAITING || status == DeliveryStatus.PENDING;
     }
 
     private void processWaitingOrderCancellation(Order order) {
-        // 1. PG사 결제 취소
+        // 1. PG사 결제 취소 (예외 처리 추가)
         if (order.getPaymentKey() != null) {
-            PaymentCancelRequest cancelRequest = new PaymentCancelRequest("사용자 주문 취소", order.getPaymentAmount());
-            paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
+            try {
+                PaymentCancelRequest cancelRequest = new PaymentCancelRequest("사용자 주문 취소", order.getPaymentAmount());
+                paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
+            } catch (Exception e) {
+                log.error("PG 결제 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+                // PG 취소 실패는 치명적이므로 예외를 던져 트랜잭션 롤백 유도 (또는 정책에 따라 처리)
+                throw new OrderException(OrderErrorCode.PAYMENT_CANCEL_FAILED);
+            }
         }
-        // 2. 포인트 복구
+
+        // 2. 포인트 복구 (메서드 변경 및 예외 처리)
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
-            memberClient.reservePoint(order.getUserId(), order.getPointDiscount());
+            try {
+                // [수정] reservePoint -> cancelPoint (취소/환불) 사용
+                memberClient.cancelPoint(order.getUserId(), order.getPointDiscount());
+            } catch (Exception e) {
+                log.error("포인트 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+                // 외부 서비스 오류 시 롤백
+                throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
+            }
         }
-        // 3. 쿠폰 복구
+
+        // 3. 쿠폰 복구 (예외 처리 추가)
         if (order.getCouponId() != null) {
-            couponClient.cancelCouponUsage(order.getCouponId());
+            try {
+                couponClient.cancelCouponUsage(order.getCouponId());
+            } catch (Exception e) {
+                log.error("쿠폰 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
+                throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
+            }
         }
-        // 4. 재고 복구 (확정된 재고 원복)
+
+        // 4. 재고 복구 (기존 로직 유지)
         try {
             List<Long> bookIds = order.getOrderItems().stream().map(OrderItem::getBookId).toList();
-            bookClient.restoreStock(bookIds);
+            String idempotencyKey = order.getId() + "-restore";
+            bookClient.restoreStock(bookIds,idempotencyKey);
         } catch (Exception e) {
             log.error("재고 복구 실패 (WAITING 취소): OrderID={}", order.getId(), e);
+            // 재고 복구 실패도 데이터 불일치를 유발하므로 예외를 던지는 것이 안전함
+            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
         }
     }
 
@@ -412,10 +446,6 @@ public class OrderServiceImpl implements OrderService {
             log.error("재고 선점 해제 실패 (PENDING 취소): OrderID={}", order.getId(), e);
         }
     }
-
-    // =========================================================================
-    // Retrieval Methods (Read Operations)
-    // =========================================================================
 
     @Override
     public Page<OrderResponse> getMyOrders(Long userId, Pageable pageable) {
@@ -443,7 +473,6 @@ public class OrderServiceImpl implements OrderService {
         return OrderValidationInfoResponse.from(order);
     }
 
-    // Inner DTO Class
     @Getter
     @Builder
     private static class OrderCalculationData {

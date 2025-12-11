@@ -27,5 +27,5 @@ public interface BookClient {
     List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);
 
     @PostMapping("/api/books/stock/restore")
-    void restoreStock(@RequestBody List<Long> bookIds);
+    void restoreStock(@RequestBody List<Long> bookIds, @RequestHeader("Idempotency-Key") String idempotencyKey);
 }

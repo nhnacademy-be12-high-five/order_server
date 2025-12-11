@@ -84,6 +84,9 @@ public class Order {
     @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
     private OrderReturn orderReturn;
 
+    @Column(name = "pending_ops")
+    private String pendingOperations;
+
     public void addOrderItem(OrderItem orderItem) {
         this.orderItems.add(orderItem);
         orderItem.setOrder(this);
@@ -91,6 +94,14 @@ public class Order {
 
     public void updateStatus(DeliveryStatus deliveryStatus) {
         this.deliveryStatus = deliveryStatus;
+    }
+
+    public void setPendingOperations(List<String> failedOps) {
+        if (failedOps == null || failedOps.isEmpty()) {
+            this.pendingOperations = null;
+        } else {
+            this.pendingOperations = String.join(",", failedOps);
+        }
     }
 
 }

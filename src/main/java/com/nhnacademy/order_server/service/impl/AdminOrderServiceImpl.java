@@ -40,8 +40,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
                 return orderRepository.findByDeliveryStatus(deliveryStatus, pageable)
                         .map(OrderResponse::from);
             } catch (IllegalArgumentException e) {
-                // 유효하지 않은 상태값인 경우 빈 페이지 반환
-                return Page.empty();
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
             }
         }
 
@@ -61,16 +60,18 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             throw new OrderException(OrderErrorCode.INVALID_REQUEST);
         }
 
-        // 배송 시작(DELIVERING) 상태 변경 시 송장 번호 필수 체크 및 저장
+        // [핵심] 배송 시작(DELIVERING) 시점에만 송장 번호 필수 체크
         if (newStatus == DeliveryStatus.DELIVERING) {
+            // 송장 번호 유효성 검증 (빈 문자열 체크)
             if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // 송장 번호 누락
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // "운송장 번호는 필수입니다" 등의 메시지 필요
             }
+
+            // 배송 정보 업데이트 (Entity 메서드 호출)
             if (order.getDelivery() != null) {
-                order.getDelivery().updateTrackingNumber(request.getTrackingNumber());
+                order.getDelivery().startDelivery(request.getTrackingNumber());
             }
         }
-        // 배송 완료(COMPLETED) 처리
         else if (newStatus == DeliveryStatus.COMPLETED) {
             if (order.getDelivery() != null) {
                 order.getDelivery().completeDelivery();
@@ -83,8 +84,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     @Override
     public void processReturn(Long returnId, boolean isApproved) {
         // OrderReturn ID는 Order ID와 동일하게 매핑됨 (@MapsId)
-        OrderReturn orderReturn = orderReturnRepository.findById(returnId)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+        OrderReturn orderReturn = orderReturnRepository.findByIdWithOrder(returnId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
 
         Order order = orderReturn.getOrder();
 
