@@ -36,8 +36,12 @@ jobs:
       project-key: team5-order-service
       docker-image: fbxogns123/order-server
       container-name: order-server
+
+      is-multi-instance: true
       # 배포 단계에서는 속도를 위해 테스트 스킵 (이미 PR에서 통과했으므로)
       maven-args: "-B -DskipTests"
+
+
       # 배포 활성화
       deploy-enabled: true
     secrets:
