@@ -14,7 +14,7 @@ jobs:
     with:
       project-key: team5-order-service
       docker-image: fbxogns123/order-server
-      container-name: order_server
+      container-name: order-server
       # 테스트를 수행해 품질 검사
       maven-args: "-B"
       # 배포 비활성화
@@ -35,7 +35,7 @@ jobs:
     with:
       project-key: team5-order-service
       docker-image: fbxogns123/order-server
-      container-name: order_server
+      container-name: order-server
       # 배포 단계에서는 속도를 위해 테스트 스킵 (이미 PR에서 통과했으므로)
       maven-args: "-B -DskipTests"
       # 배포 활성화
