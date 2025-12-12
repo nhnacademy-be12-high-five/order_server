@@ -3,7 +3,7 @@ package com.nhnacademy.order_server.adapter;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
-@FeignClient(name = "coupon-service", url = "${coupon.service.url}")
+@FeignClient(name = "TEAM5-COUPON-SERVER")
 public interface CouponClient {
 
     @PostMapping("/api/coupons/{couponId}/calculate-discount")

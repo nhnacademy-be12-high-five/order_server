@@ -5,7 +5,7 @@ import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
-@FeignClient(name = "member-service", url = "${member.service.url}")
+@FeignClient(name = "TEAM5-MEMBER-SERVER", contextId = "memberClient")
 public interface MemberClient {
 
     @GetMapping("/api/members/{userId}/grade")
