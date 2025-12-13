@@ -23,7 +23,7 @@ public interface BookClient {
     @PostMapping("/api/books/release-stock")
     void releaseHeldStock(@RequestBody List<Long> bookIds);
 
-    @PostMapping("/api/books/batch-info")
+    @PostMapping("/api/books/bulk")
     List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);
 
     @PostMapping("/api/books/stock/restore")

@@ -79,7 +79,8 @@ public class OrderServiceImpl implements OrderService {
                             .toList()
             );
 
-            int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
+            //int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
+            int deliveryFee = 0;
             OrderCreateRequest.OrderCalculationResult calculationResult = calculateFinalAmounts(
                     request, orderData, deliveryFee);
 
