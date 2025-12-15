@@ -77,6 +77,8 @@ public class OrderCreateRequest {
                     .build();
         }
     }
+    // 책 삭제
+    // 상태 변경
 
     @Builder
     @Getter

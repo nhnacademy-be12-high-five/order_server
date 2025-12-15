@@ -28,4 +28,7 @@ public interface BookClient {
 
     @PostMapping("/api/books/stock/restore")
     void restoreStock(@RequestBody List<Long> bookIds, @RequestHeader("Idempotency-Key") String idempotencyKey);
+
+    @PostMapping("/api/books/{bookId}/best-seller")
+    void processPurchase(@PathVariable("bookId") Long bookId, @RequestBody Integer quantity);
 }

@@ -1,5 +1,6 @@
 package com.nhnacademy.order_server.service.impl;
 
+import com.nhnacademy.book_server.service.BookService;
 import com.nhnacademy.order_server.adapter.*;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
@@ -21,9 +22,11 @@ import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -86,8 +89,8 @@ public class OrderServiceImpl implements OrderService {
             Order order = saveOrder(request, calculationResult, orderKey, encryptedPassword, orderData.tempOrderItems());
             saveDelivery(order, request.getRequestDeliveryDate());
 
-            clearCartSilently(userId);
 
+            clearCartSilently(userId);
             return createOrderResponse(order, orderData.firstBookTitle(), request.getOrderItems().size());
 
         } catch (Exception e) {
@@ -103,8 +106,16 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
         validateOrderStatus(order, DeliveryStatus.PENDING);
-
         confirmPaymentWithPg(order, paymentKey);
+
+        try {
+            for (OrderItem item : order.getOrderItems()) {
+                // Feign Client 호출 -> Book Server -> Redis 점수 증가
+                bookClient.processPurchase(item.getBookId(), item.getQuantity());
+            }
+        } catch (Exception e) {
+            log.error("베스트셀러 랭킹 반영 중 오류 발생 (주문은 성공 처리): {}", e.getMessage());
+        }
 
         order.updateStatus(DeliveryStatus.WAITING);
         order.setPaymentKey(paymentKey);
