@@ -19,5 +19,4 @@ public interface OrderService {
     OrderResponse getOrderDetail(Long orderId);
     OrderResponse getGuestOrder(Long orderId, Integer password);
     void cancelOrder(Long orderId);
-
 }
