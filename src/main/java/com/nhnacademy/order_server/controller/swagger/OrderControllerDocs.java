@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
 
@@ -75,4 +76,14 @@ public interface OrderControllerDocs {
 
     @Operation(summary = "포장지 목록 조회", description = "주문 시 선택 가능한 포장지 옵션을 조회합니다.")
     ResponseEntity<List<WrapperResponse>> getWrappers();
+
+    @Operation(summary = "현재 배송 정책 조회", description = "현재 적용 중인 기본 배송비와 무료 배송 기준 금액을 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "조회 성공")
+    })
+    ResponseEntity<DeliveryPolicyResponse> getCurrentDeliveryPolicy();
+
+    @Operation(summary = "주문 취소 (PENDING 상태)", description = "결제 대기 중인 주문을 취소하고 재고 및 포인트 예약을 해제합니다.")
+    ResponseEntity<Void> cancelOrder(
+            @Parameter(description = "주문 ID", required = true) @PathVariable Long orderId);
 }
