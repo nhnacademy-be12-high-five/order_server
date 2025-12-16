@@ -11,9 +11,9 @@ import java.util.List;
 @FeignClient(name = "TEAM5-BOOK-SERVER")
 public interface BookClient {
 
-    // 1. 단건 조회 (기존 유지)
+/*    // 1. 단건 조회 (기존 유지)
     @GetMapping("/api/books/{bookId}")
-    ResponseEntity<BookInfoResponse> getBookInfo(@PathVariable("bookId") Long bookId);
+    ResponseEntity<BookInfoResponse> getBookInfo(@PathVariable("bookId") Long bookId);*/
 
     @PostMapping("/api/books/bulk")
     ResponseEntity<List<BookInfoResponse>> getBooksBulk(@RequestBody List<Long> bookIds);
