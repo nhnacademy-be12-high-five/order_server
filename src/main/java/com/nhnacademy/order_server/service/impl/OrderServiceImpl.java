@@ -4,6 +4,7 @@ import com.nhnacademy.order_server.adapter.*;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
 import com.nhnacademy.order_server.dto.request.PaymentConfirmRequest;
+import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -67,17 +68,16 @@ public class OrderServiceImpl implements OrderService {
 
         reservePointsIfMember(userId, usedPoint);
 
-        List<Long> heldStockBookIds = new ArrayList<>();
+        // 롤백을 위해 선점된 책 ID 목록을 추적
+        List<Long> heldStockBookIds = request.getOrderItems().stream()
+                .map(OrderCreateRequest.OrderItemRequest::getBookId)
+                .toList();
 
         try {
             double earnRate = getMemberEarnRate(userId);
-            OrderCalculationData orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
 
-            heldStockBookIds.addAll(
-                    orderData.tempOrderItems().stream()
-                            .map(OrderItem::getBookId)
-                            .toList()
-            );
+            // [수정] 메서드 내부에서 Batch API 호출로 변경됨
+            OrderCalculationData orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
 
             int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
             OrderCreateRequest.OrderCalculationResult calculationResult = calculateFinalAmounts(
@@ -91,6 +91,7 @@ public class OrderServiceImpl implements OrderService {
             return createOrderResponse(order, orderData.firstBookTitle(), request.getOrderItems().size());
 
         } catch (Exception e) {
+            // 실패 시 전체 보상 트랜잭션 수행
             compensateTransaction(userId, usedPoint, heldStockBookIds, orderKey, e);
             throw e;
         }
@@ -168,6 +169,7 @@ public class OrderServiceImpl implements OrderService {
         Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
 
         List<OrderItem> tempOrderItems = new ArrayList<>();
+        List<StockRequest> stockRequests = new ArrayList<>();
         int totalProductAmount = 0;
         int totalWrappingFee = 0;
         int totalEarnedPoint = 0;
@@ -180,13 +182,7 @@ public class OrderServiceImpl implements OrderService {
             if (bookInfo == null) throw new OrderException(OrderErrorCode.INVALID_REQUEST);
             if (i == 0) firstBookTitle = bookInfo.getTitle();
 
-            try {
-                String idempotencyKey = orderKey + "-" + itemReq.getBookId();
-                bookClient.holdStock(itemReq.getBookId(), itemReq.getQuantity(), idempotencyKey);
-            } catch (Exception e) {
-                throw new OrderException(OrderErrorCode.OUT_OF_STOCK);
-            }
-
+            stockRequests.add(new StockRequest(itemReq.getBookId(), itemReq.getQuantity()));
             int itemAmount = bookInfo.getPrice() * itemReq.getQuantity();
             int itemEarnedPoint = (int) (itemAmount * earnRate);
 
@@ -201,6 +197,16 @@ public class OrderServiceImpl implements OrderService {
             }
 
             tempOrderItems.add(itemReq.toEntity(bookInfo.getPrice(), bookInfo.getTitle(), wrapper));
+        }
+
+        try {
+            if (!stockRequests.isEmpty()) {
+                bookClient.holdStockBatch(stockRequests, orderKey);
+                log.info("Batch Stock hold success: OrderKey={}, Items={}", orderKey, stockRequests.size());
+            }
+        } catch (Exception e) {
+            log.error("Batch Stock hold failed: OrderKey={}", orderKey, e);
+            throw new OrderException(OrderErrorCode.OUT_OF_STOCK);
         }
 
         return OrderCalculationData.builder()
@@ -227,8 +233,15 @@ public class OrderServiceImpl implements OrderService {
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
                 .collect(Collectors.toList());
         try {
-            return bookClient.getBookInfoBatch(bookIds).stream()
+            List<BookInfoResponse> bookInfos = bookClient.getBooksBulk(bookIds).getBody();
+
+            if (bookInfos == null) {
+                return Collections.emptyMap();
+            }
+
+            return bookInfos.stream()
                     .collect(Collectors.toMap(BookInfoResponse::getBookId, Function.identity()));
+
         } catch (Exception e) {
             log.error("도서 정보 배치 조회 실패", e);
             throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
@@ -346,16 +359,19 @@ public class OrderServiceImpl implements OrderService {
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
 
+        // 1. 재고 확정 (Confirm)
         try {
             List<Long> bookIds = order.getOrderItems().stream()
                     .map(OrderItem::getBookId)
                     .toList();
-            bookClient.confirmStockDeduction(bookIds);
+            // [변경] orderKey를 함께 전달하여 해당 주문의 재고만 확정
+            bookClient.confirmStockDeduction(bookIds, order.getOrderKey());
         } catch (Exception e) {
             log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
             failedOperations.add("STOCK");
         }
 
+        // 2. 쿠폰 사용 확정
         if (order.getCouponId() != null) {
             try {
                 couponClient.useCoupon(order.getCouponId());
@@ -365,6 +381,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
+        // 3. 포인트 차감 확정
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
                 memberClient.confirmPoint(order.getUserId(), order.getPointDiscount());
@@ -385,6 +402,9 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void processWaitingOrderCancellation(Order order) {
+        // WAITING 상태: 결제까지 완료된 상태 -> 환불 로직 수행
+
+        // 1. PG 환불
         if (order.getPaymentKey() != null) {
             try {
                 PaymentCancelRequest cancelRequest = new PaymentCancelRequest("사용자 주문 취소", order.getPaymentAmount());
@@ -395,7 +415,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-
+        // 2. 포인트 환불
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
                 memberClient.cancelPoint(order.getUserId(), order.getPointDiscount());
@@ -405,6 +425,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
+        // 3. 쿠폰 복구
         if (order.getCouponId() != null) {
             try {
                 couponClient.cancelCouponUsage(order.getCouponId());
@@ -414,10 +435,18 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
+        // 4. 재고 복구 (수량 포함)
         try {
-            List<Long> bookIds = order.getOrderItems().stream().map(OrderItem::getBookId).toList();
+            // [변경] StockRequest DTO 리스트 생성
+            List<StockRequest> restoreRequests = order.getOrderItems().stream()
+                    .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
+                    .toList();
+
             String idempotencyKey = order.getId() + "-restore";
-            bookClient.restoreStock(bookIds,idempotencyKey);
+
+            // [변경] 수량 정보가 포함된 요청 전송
+            bookClient.restoreStock(restoreRequests, idempotencyKey);
+
         } catch (Exception e) {
             log.error("재고 복구 실패 (WAITING 취소): OrderID={}", order.getId(), e);
             throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
