@@ -9,6 +9,5 @@ import java.util.Optional;
 
 public interface DeliveryPolicyRepository extends JpaRepository<DeliveryPolicy, Long> {
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<DeliveryPolicy> findByIsActiveTrue();
 }

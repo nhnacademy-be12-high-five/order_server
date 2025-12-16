@@ -13,6 +13,7 @@ public class DeliveryPolicyResponse {
     private Integer minOrderAmount;
     private Boolean isActive;
     private LocalDateTime effectiveDate;
+    private Integer remoteAreaSurcharge;
 
     public static DeliveryPolicyResponse from(DeliveryPolicy policy) {
         return DeliveryPolicyResponse.builder()
@@ -21,6 +22,7 @@ public class DeliveryPolicyResponse {
                 .minOrderAmount(policy.getMinOrderAmount())
                 .isActive(policy.getIsActive())
                 .effectiveDate(policy.getEffectiveDate())
+                .remoteAreaSurcharge(policy.getRemoteAreaSurcharge())
                 .build();
     }
 }

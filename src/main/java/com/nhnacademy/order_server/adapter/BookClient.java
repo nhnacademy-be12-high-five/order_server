@@ -21,7 +21,7 @@ public interface BookClient {
     void confirmStockDeduction(@RequestBody List<Long> bookIds);
 
     @PostMapping("/api/books/release-stock")
-    void releaseHeldStock(@RequestBody List<Long> bookIds);
+    void releaseHeldStock(@RequestBody List<Long> bookIds, @RequestParam("orderKey") String orderKey);
 
     @PostMapping("/api/books/bulk")
     List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);

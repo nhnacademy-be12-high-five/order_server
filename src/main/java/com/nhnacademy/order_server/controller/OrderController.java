@@ -4,6 +4,8 @@ import com.nhnacademy.order_server.controller.swagger.OrderControllerDocs;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
 import com.nhnacademy.order_server.dto.response.*;
+import com.nhnacademy.order_server.service.DeliveryPolicyService;
+import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
 import com.nhnacademy.order_server.service.WrapperService;
 import jakarta.validation.Valid;
@@ -23,6 +25,7 @@ public class OrderController implements OrderControllerDocs {
 
     private final OrderService orderService;
     private final WrapperService wrapperService;
+    private final DeliveryPolicyService deliveryPolicyService;
 
     @Override
     @PostMapping
@@ -70,5 +73,18 @@ public class OrderController implements OrderControllerDocs {
     @GetMapping("/wrappers")
     public ResponseEntity<List<WrapperResponse>> getWrappers() {
         return ResponseEntity.ok(wrapperService.getAvailableWrappers());
+    }
+
+    @Override
+    @GetMapping("/policy/current")
+    public ResponseEntity<DeliveryPolicyResponse> getCurrentDeliveryPolicy() {
+        return ResponseEntity.ok(deliveryPolicyService.getActivePolicy());
+    }
+
+    @Override
+    @PostMapping("/{orderId}/cancel")
+    public ResponseEntity<Void> cancelOrder(@PathVariable Long orderId) {
+        orderService.cancelOrder(orderId);
+        return ResponseEntity.ok().build();
     }
 }

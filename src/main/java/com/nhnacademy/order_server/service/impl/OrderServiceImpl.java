@@ -79,8 +79,7 @@ public class OrderServiceImpl implements OrderService {
                             .toList()
             );
 
-            //int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
-            int deliveryFee = 0;
+            int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
             OrderCreateRequest.OrderCalculationResult calculationResult = calculateFinalAmounts(
                     request, orderData, deliveryFee);
 
@@ -92,7 +91,7 @@ public class OrderServiceImpl implements OrderService {
             return createOrderResponse(order, orderData.firstBookTitle(), request.getOrderItems().size());
 
         } catch (Exception e) {
-            compensateTransaction(userId, usedPoint, heldStockBookIds, e);
+            compensateTransaction(userId, usedPoint, heldStockBookIds, orderKey, e);
             throw e;
         }
     }
@@ -304,7 +303,7 @@ public class OrderServiceImpl implements OrderService {
         return OrderCreateResponse.from(order, firstBookTitle, totalItems);
     }
 
-    private void compensateTransaction(Long userId, int usedPoint, List<Long> heldStockBookIds, Exception originalException) {
+    private void compensateTransaction(Long userId, int usedPoint, List<Long> heldStockBookIds,String orderKey, Exception originalException) {
         if (userId != null && usedPoint > 0) {
             try {
                 memberClient.cancelPoint(userId, usedPoint);
@@ -315,9 +314,9 @@ public class OrderServiceImpl implements OrderService {
         if (!heldStockBookIds.isEmpty()) {
             try {
                 log.info("주문 생성 실패로 인한 재고 롤백 시도: {}", heldStockBookIds);
-                bookClient.releaseHeldStock(heldStockBookIds);
+                bookClient.releaseHeldStock(heldStockBookIds, orderKey);
             } catch (Exception e) {
-                log.error("CRITICAL: 재고 롤백 실패. 수동 복구 필요. IDs={}", heldStockBookIds, e);
+                log.error("CRITICAL: 재고 롤백 실패. 수동 복구 필요. IDs={}, OrderKey={}", heldStockBookIds, orderKey, e);
             }
         }
     }
@@ -347,7 +346,6 @@ public class OrderServiceImpl implements OrderService {
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
 
-        // 1. 재고 확정 (독립 처리)
         try {
             List<Long> bookIds = order.getOrderItems().stream()
                     .map(OrderItem::getBookId)
@@ -358,7 +356,6 @@ public class OrderServiceImpl implements OrderService {
             failedOperations.add("STOCK");
         }
 
-        // 2. 쿠폰 사용 (독립 처리)
         if (order.getCouponId() != null) {
             try {
                 couponClient.useCoupon(order.getCouponId());
@@ -368,7 +365,6 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 3. 포인트 확정 (독립 처리)
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
                 memberClient.confirmPoint(order.getUserId(), order.getPointDiscount());
@@ -378,11 +374,9 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 4. 실패 내역이 있다면 주문 엔티티에 저장 (추후 재처리 위함)
         if (!failedOperations.isEmpty()) {
             log.warn("주문 후처리 일부 실패. 재처리 필요 항목: {}", failedOperations);
             order.setPendingOperations(failedOperations);
-            // 필요 시 주문 상태를 'PARTIAL_COMPLETED' 등으로 변경하거나 알림 전송 로직 추가 가능
         }
     }
 
@@ -391,31 +385,26 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void processWaitingOrderCancellation(Order order) {
-        // 1. PG사 결제 취소 (예외 처리 추가)
         if (order.getPaymentKey() != null) {
             try {
                 PaymentCancelRequest cancelRequest = new PaymentCancelRequest("사용자 주문 취소", order.getPaymentAmount());
                 paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
             } catch (Exception e) {
                 log.error("PG 결제 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                // PG 취소 실패는 치명적이므로 예외를 던져 트랜잭션 롤백 유도 (또는 정책에 따라 처리)
                 throw new OrderException(OrderErrorCode.PAYMENT_CANCEL_FAILED);
             }
         }
 
-        // 2. 포인트 복구 (메서드 변경 및 예외 처리)
+
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
-                // [수정] reservePoint -> cancelPoint (취소/환불) 사용
                 memberClient.cancelPoint(order.getUserId(), order.getPointDiscount());
             } catch (Exception e) {
                 log.error("포인트 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                // 외부 서비스 오류 시 롤백
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
             }
         }
 
-        // 3. 쿠폰 복구 (예외 처리 추가)
         if (order.getCouponId() != null) {
             try {
                 couponClient.cancelCouponUsage(order.getCouponId());
@@ -425,25 +414,33 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 4. 재고 복구 (기존 로직 유지)
         try {
             List<Long> bookIds = order.getOrderItems().stream().map(OrderItem::getBookId).toList();
             String idempotencyKey = order.getId() + "-restore";
             bookClient.restoreStock(bookIds,idempotencyKey);
         } catch (Exception e) {
             log.error("재고 복구 실패 (WAITING 취소): OrderID={}", order.getId(), e);
-            // 재고 복구 실패도 데이터 불일치를 유발하므로 예외를 던지는 것이 안전함
             throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
         }
     }
 
     private void processPendingOrderCancellation(Order order) {
-        // 선점된 재고 해제
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+            try {
+                memberClient.cancelPoint(order.getUserId(), order.getPointDiscount());
+            } catch (Exception e) {
+                log.error("CRITICAL: 포인트 예약 취소 실패! OrderID={}", order.getId(), e);
+                throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
+            }
+        }
+
         try {
             List<Long> bookIds = order.getOrderItems().stream().map(OrderItem::getBookId).toList();
-            bookClient.releaseHeldStock(bookIds);
+            bookClient.releaseHeldStock(bookIds, order.getOrderKey());
+
         } catch (Exception e) {
-            log.error("재고 선점 해제 실패 (PENDING 취소): OrderID={}", order.getId(), e);
+            log.error("CRITICAL: 재고 선점 해제 실패 (PENDING 취소): OrderID={}, OrderKey={}", order.getId(), order.getOrderKey(), e);
+            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
         }
     }
 
