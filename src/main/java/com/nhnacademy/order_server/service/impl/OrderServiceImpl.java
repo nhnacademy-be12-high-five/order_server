@@ -27,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -235,11 +236,13 @@ public class OrderServiceImpl implements OrderService {
         try {
             List<BookInfoResponse> bookInfos = bookClient.getBooksBulk(bookIds).getBody();
 
-            if (bookInfos == null) {
+            ResponseEntity<List<BookInfoResponse>> response = bookClient.getBooksBulk(bookIds);
+            if (response == null || response.getBody() == null || response.getBody().isEmpty()) {
+                log.error("도서 정보 조회 응답이 비어있음: bookIds={}", bookIds);
                 return Collections.emptyMap();
             }
 
-            return bookInfos.stream()
+            return response.getBody().stream()
                     .collect(Collectors.toMap(BookInfoResponse::getBookId, Function.identity()));
 
         } catch (Exception e) {
