@@ -106,7 +106,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public void processPaymentSuccessMessage(PaymentSuccessMessage message) {
-        Long orderId = Long.valueOf(message.getOrderId());
+        Long orderId = message.getOrderId();
 
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
@@ -384,8 +384,9 @@ public class OrderServiceImpl implements OrderService {
         try {
             PaymentConfirmRequest confirmRequest = PaymentConfirmRequest.builder()
                     .paymentKey(paymentKey)
-                    .orderId(order.getOrderKey())
+                    .orderKey(order.getOrderKey())
                     .amount(order.getPaymentAmount())
+                    .paymentMethod("Toss")
                     .build();
             paymentClient.confirmPayment(confirmRequest);
         } catch (Exception e) {
