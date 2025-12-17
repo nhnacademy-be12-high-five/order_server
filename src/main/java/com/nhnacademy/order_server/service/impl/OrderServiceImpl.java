@@ -234,9 +234,8 @@ public class OrderServiceImpl implements OrderService {
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
                 .collect(Collectors.toList());
         try {
-            List<BookInfoResponse> bookInfos = bookClient.getBooksBulk(bookIds).getBody();
-
             ResponseEntity<List<BookInfoResponse>> response = bookClient.getBooksBulk(bookIds);
+
             if (response == null || response.getBody() == null || response.getBody().isEmpty()) {
                 log.error("도서 정보 조회 응답이 비어있음: bookIds={}", bookIds);
                 return Collections.emptyMap();
@@ -307,7 +306,7 @@ public class OrderServiceImpl implements OrderService {
     private void clearCartSilently(Long userId) {
         if (userId != null) {
             try {
-                cartClient.clearCartByUserId(userId);
+                cartClient.clearCart(userId);
             } catch (Exception e) {
                 log.warn("장바구니 비우기 요청 실패: User={}", userId, e);
             }
