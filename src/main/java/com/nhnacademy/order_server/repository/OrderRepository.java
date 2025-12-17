@@ -12,7 +12,8 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order,Long> {
 
-    @Query("SELECT distinct o from Order o join fetch o.orderItems where o.id = :userId")
+    // o.id (주문번호) -> o.userId (유저아이디) 로 변경
+    @Query("SELECT distinct o from Order o join fetch o.orderItems where o.userId = :userId")
     Page<Order> findAllByUserId(Long userId, Pageable pageable);
 
     @Query("SELECT o FROM Order o JOIN FETCH o.orderItems WHERE o.id = :orderId")
