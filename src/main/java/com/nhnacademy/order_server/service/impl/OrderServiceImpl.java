@@ -1,6 +1,7 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.*;
+import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage; // [추가됨]
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
 import com.nhnacademy.order_server.dto.request.PaymentConfirmRequest;
@@ -98,6 +99,43 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    /**
+     * RabbitMQ 메시지를 통한 결제 완료 처리 메서드
+     * 결제 서버에서 이미 결제가 승인된 후 호출되므로 confirmPaymentWithPg를 호출하지 않습니다.
+     */
+    @Override
+    @Transactional
+    public void processPaymentSuccessMessage(PaymentSuccessMessage message) {
+        Long orderId = message.getOrderId();
+
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        // 1. 멱등성 검사: 이미 처리가 완료된(PENDING이 아닌) 주문이면 무시
+        if (order.getDeliveryStatus() != DeliveryStatus.PENDING) {
+            log.info("이미 처리된 주문입니다. (Idempotency Check) OrderID={}, Status={}", orderId, order.getDeliveryStatus());
+            return;
+        }
+
+        // 2. 금액 검증 (선택 사항이나 데이터 무결성을 위해 권장)
+        if (order.getPaymentAmount() != message.getTotalAmount().intValue()) {
+            log.error("주문 금액 불일치! OrderID={}, OrderAmount={}, PaidAmount={}",
+                    orderId, order.getPaymentAmount(), message.getTotalAmount());
+            // 심각한 오류이므로 예외를 던져 DLQ로 보내거나 관리자 확인 필요
+            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+        }
+
+        // 3. 주문 상태 업데이트 (결제 승인은 이미 완료됨)
+        order.updateStatus(DeliveryStatus.WAITING);
+        order.setPaymentKey(message.getPaymentKey());
+
+        // 4. 외부 리소스 확정 (재고, 쿠폰, 포인트)
+        finalizeExternalResources(order);
+
+        log.info("RabbitMQ 결제 메시지 처리 완료. OrderID={}", orderId);
+    }
+
+    // 기존 HTTP 동기 호출용 메서드 (필요 없다면 제거 가능하지만 하위 호환성을 위해 유지)
     @Override
     @Transactional
     public void paymentSuccess(Long orderId, String paymentKey) {
@@ -234,9 +272,8 @@ public class OrderServiceImpl implements OrderService {
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
                 .collect(Collectors.toList());
         try {
-            List<BookInfoResponse> bookInfos = bookClient.getBooksBulk(bookIds).getBody();
-
             ResponseEntity<List<BookInfoResponse>> response = bookClient.getBooksBulk(bookIds);
+
             if (response == null || response.getBody() == null || response.getBody().isEmpty()) {
                 log.error("도서 정보 조회 응답이 비어있음: bookIds={}", bookIds);
                 return Collections.emptyMap();
@@ -307,7 +344,7 @@ public class OrderServiceImpl implements OrderService {
     private void clearCartSilently(Long userId) {
         if (userId != null) {
             try {
-                cartClient.clearCartByUserId(userId);
+                cartClient.clearCart(userId);
             } catch (Exception e) {
                 log.warn("장바구니 비우기 요청 실패: User={}", userId, e);
             }
@@ -337,8 +374,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-
-
     private void validateOrderStatus(Order order, DeliveryStatus expected) {
         if (order.getDeliveryStatus() != expected) {
             throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
@@ -349,8 +384,9 @@ public class OrderServiceImpl implements OrderService {
         try {
             PaymentConfirmRequest confirmRequest = PaymentConfirmRequest.builder()
                     .paymentKey(paymentKey)
-                    .orderId(order.getOrderKey())
+                    .orderKey(order.getOrderKey())
                     .amount(order.getPaymentAmount())
+                    .paymentMethod("Toss")
                     .build();
             paymentClient.confirmPayment(confirmRequest);
         } catch (Exception e) {
@@ -503,7 +539,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Builder
-        private record OrderCalculationData(List<OrderItem> tempOrderItems, int totalProductAmount, int totalWrappingFee,
-                                            int totalEarnedPoint, String firstBookTitle) {
+    private record OrderCalculationData(List<OrderItem> tempOrderItems, int totalProductAmount, int totalWrappingFee,
+                                        int totalEarnedPoint, String firstBookTitle) {
     }
 }

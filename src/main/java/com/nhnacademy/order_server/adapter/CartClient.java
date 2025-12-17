@@ -6,6 +6,6 @@ import org.springframework.web.bind.annotation.*;
 @FeignClient(name = "TEAM5-MEMBER-SERVER", contextId = "cartClient")
 public interface CartClient {
 
-    @DeleteMapping("/api/carts/users/{userId}")
-    void clearCartByUserId(@PathVariable("userId") Long userId);
+    @DeleteMapping("/api/cart/items")
+    void clearCart(@RequestHeader("X-USER-ID") Long memberId);
 }

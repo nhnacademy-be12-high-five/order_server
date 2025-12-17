@@ -1,6 +1,7 @@
 package com.nhnacademy.order_server.service;
 
 
+import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderReturnRequest;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
@@ -19,5 +20,6 @@ public interface OrderService {
     OrderResponse getOrderDetail(Long orderId);
     OrderResponse getGuestOrder(Long orderId, Integer password);
     void cancelOrder(Long orderId);
+    void processPaymentSuccessMessage(PaymentSuccessMessage message);
 
 }
