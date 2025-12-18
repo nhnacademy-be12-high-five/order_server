@@ -74,6 +74,7 @@ public class OrderServiceImpl implements OrderService {
 
         List<Long> heldStockBookIds = request.getOrderItems().stream()
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
+                .distinct()
                 .toList();
 
         try {
@@ -128,16 +129,30 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public void paymentSuccess(Long orderId, String paymentKey) {
+        log.info("결제 승인 요청 시작: orderId={}, key={}", orderId, paymentKey);
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
         validateOrderStatus(order, DeliveryStatus.PENDING);
 
         confirmPaymentWithPg(order, paymentKey);
-
+        try {
+            confirmPaymentWithPg(order, paymentKey);
+            log.info("PG 승인 성공"); // [로그 추가]
+        } catch (Exception e) {
+            log.error("PG 승인 실패: {}", e.getMessage(), e); // [로그 추가]
+            throw e; // 여기서 터지면 PENDING 유지됨
+        }
         order.updateStatus(DeliveryStatus.WAITING);
         order.setPaymentKey(paymentKey);
-
+// 여기서 터지는지 확인
+        try {
+            finalizeExternalResources(order);
+            log.info("외부 리소스 확정 성공"); // [로그 추가]
+        } catch (Exception e) {
+            log.error("외부 리소스 확정 중 치명적 오류 (롤백됨): {}", e.getMessage(), e);
+            throw e; // 원래는 안 던지지만 테스트를 위해
+        }
         finalizeExternalResources(order);
     }
 
@@ -196,41 +211,86 @@ public class OrderServiceImpl implements OrderService {
         Map<Long, Wrapper> wrapperMap = getWrapperMap(request.getOrderItems());
         Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
 
-        List<OrderItem> tempOrderItems = new ArrayList<>();
-        List<StockRequest> stockRequests = new ArrayList<>();
+        // 1. 병합을 위한 맵 (Key: "책ID:포장지ID", Value: 누적 수량)
+        Map<String, Integer> mergedQuantityMap = new LinkedHashMap<>(); // 순서 보장
+        // 맵 재구성을 위한 메타 데이터 저장
+        Map<String, Long> keyToBookIdMap = new HashMap<>();
+        Map<String, Long> keyToWrapperIdMap = new HashMap<>();
+
+        String firstBookTitle = null;
         int totalProductAmount = 0;
         int totalWrappingFee = 0;
         int totalEarnedPoint = 0;
-        String firstBookTitle = null;
 
-        for (int i = 0; i < request.getOrderItems().size(); i++) {
-            OrderCreateRequest.OrderItemRequest itemReq = request.getOrderItems().get(i);
-            BookInfoResponse bookInfo = bookInfoMap.get(itemReq.getBookId());
-
+        // 2. 요청 아이템 순회하며 병합 및 금액 계산
+        for (OrderCreateRequest.OrderItemRequest itemReq : request.getOrderItems()) {
+            Long bookId = itemReq.getBookId();
+            BookInfoResponse bookInfo = bookInfoMap.get(bookId);
             if (bookInfo == null) throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-            if (i == 0) firstBookTitle = bookInfo.getTitle();
 
-            stockRequests.add(new StockRequest(itemReq.getBookId(), itemReq.getQuantity()));
+            if (firstBookTitle == null) firstBookTitle = bookInfo.getTitle();
+
+            // 키 생성 (책ID + 포장지ID) -> 같은 책이라도 포장이 다르면 다른 상품으로 취급
+            Long wrapperId = itemReq.getWrapperId();
+            String key = bookId + ":" + (wrapperId != null ? wrapperId : "null");
+
+            // 수량 병합
+            mergedQuantityMap.merge(key, itemReq.getQuantity(), Integer::sum);
+            keyToBookIdMap.put(key, bookId);
+            keyToWrapperIdMap.put(key, wrapperId);
+
+            // 금액 누적 (단가 * 요청수량) -> 병합 전 개별 계산하여 합산
             int itemAmount = bookInfo.getPrice() * itemReq.getQuantity();
-            int itemEarnedPoint = (int) (itemAmount * earnRate);
-
             totalProductAmount += itemAmount;
-            totalEarnedPoint += itemEarnedPoint;
+            totalEarnedPoint += (int) (itemAmount * earnRate);
 
-            Wrapper wrapper = null;
-            if (itemReq.getWrapperId() != null) {
-                wrapper = wrapperMap.get(itemReq.getWrapperId());
+            if (wrapperId != null) {
+                Wrapper wrapper = wrapperMap.get(wrapperId);
                 if (wrapper == null) throw new OrderException(OrderErrorCode.WRAPPER_NOT_FOUND);
                 totalWrappingFee += wrapper.getWrapperPrice() * itemReq.getQuantity();
             }
-
-            tempOrderItems.add(itemReq.toEntity(bookInfo.getPrice(), bookInfo.getTitle(), wrapper));
         }
+
+        // 3. 병합된 결과로 OrderItem 엔티티 및 재고 요청 생성
+        List<OrderItem> finalOrderItems = new ArrayList<>();
+        // 재고 요청용 맵 (책 ID별 총 수량)
+        Map<Long, Integer> stockMap = new HashMap<>();
+
+        for (Map.Entry<String, Integer> entry : mergedQuantityMap.entrySet()) {
+            String key = entry.getKey();
+            Integer totalQty = entry.getValue();
+            Long bookId = keyToBookIdMap.get(key);
+            Long wrapperId = keyToWrapperIdMap.get(key);
+
+            BookInfoResponse bookInfo = bookInfoMap.get(bookId);
+            Wrapper wrapper = (wrapperId != null) ? wrapperMap.get(wrapperId) : null;
+
+            // 재고 맵 병합 (책 ID 기준)
+            stockMap.merge(bookId, totalQty, Integer::sum);
+
+            // 병합된 수량으로 OrderItem 생성
+            OrderItem orderItem = OrderItem.builder()
+                    .bookId(bookId)
+                    .bookTitle(bookInfo.getTitle())
+                    .quantity(totalQty) // [중요] 합쳐진 수량
+                    .unitPrice(bookInfo.getPrice())
+                    .wrapper(wrapper)
+                    .isWrapped(wrapper != null)
+                    .key(UUID.randomUUID().toString())
+                    .build();
+
+            finalOrderItems.add(orderItem);
+        }
+
+        // 4. 재고 선점 요청 (Batch) - 중복 없는 리스트로 변환
+        List<StockRequest> stockRequests = stockMap.entrySet().stream()
+                .map(e -> new StockRequest(e.getKey(), e.getValue()))
+                .collect(Collectors.toList());
 
         try {
             if (!stockRequests.isEmpty()) {
                 bookClient.holdStockBatch(stockRequests, orderKey);
-                log.info("Batch Stock hold success: OrderKey={}, Items={}", orderKey, stockRequests.size());
+                log.info("Batch Stock hold success: OrderKey={}, UniqueItems={}", orderKey, stockRequests.size());
             }
         } catch (Exception e) {
             log.error("Batch Stock hold failed: OrderKey={}", orderKey, e);
@@ -238,7 +298,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         return OrderCalculationData.builder()
-                .tempOrderItems(tempOrderItems)
+                .tempOrderItems(finalOrderItems)
                 .totalProductAmount(totalProductAmount)
                 .totalWrappingFee(totalWrappingFee)
                 .totalEarnedPoint(totalEarnedPoint)
@@ -259,6 +319,7 @@ public class OrderServiceImpl implements OrderService {
     private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
         List<Long> bookIds = items.stream()
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
+                .distinct()
                 .collect(Collectors.toList());
         try {
             ResponseEntity<List<BookInfoResponse>> response = bookClient.getBooksBulk(bookIds);
@@ -269,8 +330,11 @@ public class OrderServiceImpl implements OrderService {
             }
 
             return response.getBody().stream()
-                    .collect(Collectors.toMap(BookInfoResponse::getBookId, Function.identity()));
-
+                    .collect(Collectors.toMap(
+                            BookInfoResponse::getBookId,
+                            Function.identity(),
+                            (existing, replacement) -> existing
+                    ));
         } catch (Exception e) {
             log.error("도서 정보 배치 조회 실패", e);
             throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
@@ -402,15 +466,19 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    // [수정된 메서드]
+
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
 
         // 1. 재고 확정
         try {
-            List<Long> bookIds = order.getOrderItems().stream()
-                    .map(OrderItem::getBookId)
-                    .toList();
+        // 병합된 수량만큼 ID를 풀어서 보내기 (A책 2권이면 [A, A]로 보냄)
+            List<Long> bookIds = new ArrayList<>();
+            for (OrderItem item : order.getOrderItems()) {
+                for (int i = 0; i < item.getQuantity(); i++) {
+                    bookIds.add(item.getBookId());
+                }
+            }
             bookClient.confirmStockDeduction(bookIds, order.getOrderKey());
         } catch (Exception e) {
             log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());

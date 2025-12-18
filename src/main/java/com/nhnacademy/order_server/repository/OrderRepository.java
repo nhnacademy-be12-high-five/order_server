@@ -12,8 +12,10 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order,Long> {
 
-    // o.id (주문번호) -> o.userId (유저아이디) 로 변경
-    @Query(value = "SELECT o FROM Order o JOIN FETCH o.delivery WHERE o.userId = :userId",
+    @Query(value = "SELECT o FROM Order o " +
+            "JOIN FETCH o.delivery " +
+            "LEFT JOIN FETCH o.orderReturn " +
+            "WHERE o.userId = :userId",
             countQuery = "SELECT count(o) FROM Order o WHERE o.userId = :userId")
     Page<Order> findAllByUserId(@Param("userId") Long userId, Pageable pageable);
 
