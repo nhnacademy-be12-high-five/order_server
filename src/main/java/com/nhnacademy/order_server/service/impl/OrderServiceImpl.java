@@ -1,11 +1,13 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.*;
-import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage; // [추가됨]
-import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
-import com.nhnacademy.order_server.dto.request.PaymentConfirmRequest;
-import com.nhnacademy.order_server.dto.request.StockRequest;
+import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
+import com.nhnacademy.order_server.dto.request.*;
+import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
+
+import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -70,7 +72,6 @@ public class OrderServiceImpl implements OrderService {
 
         reservePointsIfMember(userId, usedPoint);
 
-        // 롤백을 위해 선점된 책 ID 목록을 추적
         List<Long> heldStockBookIds = request.getOrderItems().stream()
                 .map(OrderCreateRequest.OrderItemRequest::getBookId)
                 .toList();
@@ -78,7 +79,6 @@ public class OrderServiceImpl implements OrderService {
         try {
             double earnRate = getMemberEarnRate(userId);
 
-            // [수정] 메서드 내부에서 Batch API 호출로 변경됨
             OrderCalculationData orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
 
             int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
@@ -93,16 +93,11 @@ public class OrderServiceImpl implements OrderService {
             return createOrderResponse(order, orderData.firstBookTitle(), request.getOrderItems().size());
 
         } catch (Exception e) {
-            // 실패 시 전체 보상 트랜잭션 수행
             compensateTransaction(userId, usedPoint, heldStockBookIds, orderKey, e);
             throw e;
         }
     }
 
-    /**
-     * RabbitMQ 메시지를 통한 결제 완료 처리 메서드
-     * 결제 서버에서 이미 결제가 승인된 후 호출되므로 confirmPaymentWithPg를 호출하지 않습니다.
-     */
     @Override
     @Transactional
     public void processPaymentSuccessMessage(PaymentSuccessMessage message) {
@@ -111,31 +106,25 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        // 1. 멱등성 검사: 이미 처리가 완료된(PENDING이 아닌) 주문이면 무시
         if (order.getDeliveryStatus() != DeliveryStatus.PENDING) {
             log.info("이미 처리된 주문입니다. (Idempotency Check) OrderID={}, Status={}", orderId, order.getDeliveryStatus());
             return;
         }
 
-        // 2. 금액 검증 (선택 사항이나 데이터 무결성을 위해 권장)
         if (order.getPaymentAmount() != message.getTotalAmount().intValue()) {
             log.error("주문 금액 불일치! OrderID={}, OrderAmount={}, PaidAmount={}",
                     orderId, order.getPaymentAmount(), message.getTotalAmount());
-            // 심각한 오류이므로 예외를 던져 DLQ로 보내거나 관리자 확인 필요
             throw new OrderException(OrderErrorCode.INVALID_REQUEST);
         }
 
-        // 3. 주문 상태 업데이트 (결제 승인은 이미 완료됨)
         order.updateStatus(DeliveryStatus.WAITING);
         order.setPaymentKey(message.getPaymentKey());
 
-        // 4. 외부 리소스 확정 (재고, 쿠폰, 포인트)
         finalizeExternalResources(order);
 
         log.info("RabbitMQ 결제 메시지 처리 완료. OrderID={}", orderId);
     }
 
-    // 기존 HTTP 동기 호출용 메서드 (필요 없다면 제거 가능하지만 하위 호환성을 위해 유지)
     @Override
     @Transactional
     public void paymentSuccess(Long orderId, String paymentKey) {
@@ -297,27 +286,46 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    // [수정된 메서드]
     private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(
             OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
 
-        int couponDiscount = 0;
+        int couponDiscount = 0; // 기존 로직대로 int 사용
+
         if (request.getCouponId() != null) {
             try {
-                couponDiscount = couponClient.calculateDiscount(request.getCouponId(), data.totalProductAmount());
+                CouponCalculationRequest calcReq = new CouponCalculationRequest(
+                        request.getCouponId(),
+                        (long) data.totalProductAmount() // DTO가 Integer를 받는지 Long을 받는지 확인 후 필요하면 캐스팅
+                );
+
+                if (request.getUserId() != null) {
+                    // [수정 포인트] 리턴 타입이 객체(CouponCalculationResponse)로 변경됨
+                    CouponCalculationResponse response = couponClient.calculateCoupon(request.getUserId(), calcReq);
+
+                    // 객체에서 금액(Long)을 꺼내서 int로 변환 (기존 주문 로직 호환용)
+                    if (response != null && response.getDiscountAmount() != null) {
+                        couponDiscount = response.getDiscountAmount().intValue();
+                    }
+                }
+
             } catch (Exception e) {
+                log.error("쿠폰 할인 계산 실패", e);
                 throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
             }
             couponDiscount = Math.min(couponDiscount, data.totalProductAmount());
         }
 
         int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
+
+        // 최종 결제 금액 계산
         int finalPaymentAmount = Math.max(0, (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
 
         return OrderCreateRequest.OrderCalculationResult.builder()
                 .productAmount(data.totalProductAmount())
                 .deliveryFee(deliveryFee)
                 .wrappingFee(data.totalWrappingFee())
-                .couponDiscount(couponDiscount)
+                .couponDiscount(couponDiscount) // int 값 전달
                 .pointDiscount(usedPoint)
                 .paymentAmount(finalPaymentAmount)
                 .earnedPoint(data.totalEarnedPoint())
@@ -352,7 +360,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderCreateResponse createOrderResponse(Order order, String firstBookTitle, int totalItems) {
-
         return OrderCreateResponse.from(order, firstBookTitle, totalItems);
     }
 
@@ -395,25 +402,31 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    // [수정된 메서드]
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
 
-        // 1. 재고 확정 (Confirm)
+        // 1. 재고 확정
         try {
             List<Long> bookIds = order.getOrderItems().stream()
                     .map(OrderItem::getBookId)
                     .toList();
-            // [변경] orderKey를 함께 전달하여 해당 주문의 재고만 확정
             bookClient.confirmStockDeduction(bookIds, order.getOrderKey());
         } catch (Exception e) {
             log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
             failedOperations.add("STOCK");
         }
 
-        // 2. 쿠폰 사용 확정
+        // 2. 쿠폰 사용 확정 (변경됨)
         if (order.getCouponId() != null) {
             try {
-                couponClient.useCoupon(order.getCouponId());
+                // DTO 생성 및 사용 요청
+                MemberCouponUseRequest useReq = new MemberCouponUseRequest(
+                        order.getCouponId(),
+                        order.getId()
+                );
+                couponClient.useCoupon(order.getUserId(), useReq);
+
             } catch (Exception e) {
                 log.error("쿠폰 사용 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
                 failedOperations.add("COUPON");
@@ -440,9 +453,8 @@ public class OrderServiceImpl implements OrderService {
         return status == DeliveryStatus.WAITING || status == DeliveryStatus.PENDING;
     }
 
+    // [수정된 메서드]
     private void processWaitingOrderCancellation(Order order) {
-        // WAITING 상태: 결제까지 완료된 상태 -> 환불 로직 수행
-
         // 1. PG 환불
         if (order.getPaymentKey() != null) {
             try {
@@ -464,26 +476,23 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 3. 쿠폰 복구
+        // 3. 쿠폰 복구 (변경됨)
         if (order.getCouponId() != null) {
             try {
-                couponClient.cancelCouponUsage(order.getCouponId());
+                MemberCouponCancelRequest cancelReq = new MemberCouponCancelRequest(order.getCouponId());
+                couponClient.cancelCouponUsage(order.getUserId(), cancelReq);
             } catch (Exception e) {
                 log.error("쿠폰 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
                 throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
             }
         }
 
-        // 4. 재고 복구 (수량 포함)
+        // 4. 재고 복구
         try {
-            // [변경] StockRequest DTO 리스트 생성
             List<StockRequest> restoreRequests = order.getOrderItems().stream()
                     .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
                     .toList();
-
             String idempotencyKey = order.getId() + "-restore";
-
-            // [변경] 수량 정보가 포함된 요청 전송
             bookClient.restoreStock(restoreRequests, idempotencyKey);
 
         } catch (Exception e) {
