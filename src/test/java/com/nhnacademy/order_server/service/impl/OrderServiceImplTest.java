@@ -12,8 +12,6 @@ import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import com.nhnacademy.order_server.entity.Wrapper;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
-import com.nhnacademy.order_server.exception.OrderErrorCode;
-import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryRepository;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
@@ -30,16 +28,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -92,7 +89,8 @@ class OrderServiceImplTest {
         ReflectionTestUtils.setField(request, "orderItems", List.of(itemReq));
 
         lenient().when(memberClient.getMemberGrade(anyLong())).thenReturn(mockGradeResponse);
-        //lenient().when(bookClient.getBookInfoBatch(anyList())).thenReturn(List.of(mockBookInfo));
+        // BookClient.getBooksBulk Mocking 추가 (createOrder 내부에서 호출됨)
+        lenient().when(bookClient.getBooksBulk(anyList())).thenReturn(ResponseEntity.ok(List.of(mockBookInfo)));
         lenient().when(wrapperRepository.findAllById(any())).thenReturn(List.of(mockWrapper));
         lenient().when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
     }
@@ -103,23 +101,29 @@ class OrderServiceImplTest {
         @Test
         @DisplayName("성공: 회원 주문")
         void success() {
+            // given
             when(deliveryService.calculateDeliveryFee(anyInt(), anyString())).thenReturn(3000);
             ReflectionTestUtils.setField(request, "usedPoint", 1000);
 
+            // save 시점에 ID 부여 모의
             when(orderRepository.save(any(Order.class))).thenAnswer(i -> {
                 Order o = i.getArgument(0);
-                ReflectionTestUtils.setField(o, "id", 1L);
+                ReflectionTestUtils.setField(o, "id", 1L); // ID 생성 시뮬레이션
                 return o;
             });
 
+            // when
             OrderCreateResponse response = orderService.createOrder(request);
 
+            // then
             assertThat(response.getOrderId()).isEqualTo(1L);
-            verify(memberClient).reservePoint(100L, 1000);
-            //verify(bookClient).holdStock(eq(1L), eq(2), anyString());
-        }
 
-        // ... (실패 케이스들 생략 가능하지만, 포함하는 것이 안전함) ...
+            // [수정] reservePoint 호출 시 userId, amount, orderId(1L) 확인
+            verify(memberClient).reservePoint(eq(100L), eq(1000), eq(1L));
+
+            // 재고 선점 호출 확인 (holdStockBatch)
+            verify(bookClient).holdStockBatch(anyList(), anyString());
+        }
     }
 
     @Nested
@@ -128,21 +132,31 @@ class OrderServiceImplTest {
         @Test
         @DisplayName("성공: 정상 처리")
         void success() {
+            // given
             Order mockOrder = Order.builder().build();
+            ReflectionTestUtils.setField(mockOrder, "id", 1L); // ID 설정
             ReflectionTestUtils.setField(mockOrder, "deliveryStatus", DeliveryStatus.PENDING);
             ReflectionTestUtils.setField(mockOrder, "userId", 100L);
             ReflectionTestUtils.setField(mockOrder, "pointDiscount", 1000);
+            ReflectionTestUtils.setField(mockOrder, "orderKey", "order-key-123");
+
             OrderItem item = OrderItem.builder().build();
             ReflectionTestUtils.setField(item, "bookId", 1L);
             mockOrder.addOrderItem(item);
 
             when(orderRepository.findById(1L)).thenReturn(Optional.of(mockOrder));
 
+            // when
             orderService.paymentSuccess(1L, "pay_key");
 
+            // then
             assertThat(mockOrder.getDeliveryStatus()).isEqualTo(DeliveryStatus.WAITING);
-           // verify(bookClient).confirmStockDeduction(anyList());
-            verify(memberClient).confirmPoint(100L, 1000);
+
+            // 재고 확정 확인
+            verify(bookClient).confirmStockDeduction(anyList(), eq("order-key-123"));
+
+            // [수정] 포인트 확정 호출 시 userId, amount, orderId(1L) 확인
+            verify(memberClient).confirmPoint(eq(100L), eq(1000), eq(1L));
         }
     }
 
@@ -153,7 +167,7 @@ class OrderServiceImplTest {
         @DisplayName("성공: 주문키로 정보 조회")
         void success() {
             // Given
-            String orderKey = "uuid-key-123"; // [수정] String 타입
+            String orderKey = "uuid-key-123";
             Order mockOrder = Order.builder().build();
             ReflectionTestUtils.setField(mockOrder, "id", 1L);
             ReflectionTestUtils.setField(mockOrder, "paymentAmount", 30000);
@@ -161,7 +175,6 @@ class OrderServiceImplTest {
             ReflectionTestUtils.setField(mockOrder, "userId", 100L);
             ReflectionTestUtils.setField(mockOrder, "pointDiscount", 1000);
 
-            // [수정] String 타입 orderKey로 조회
             when(orderRepository.findByOrderKey(orderKey)).thenReturn(Optional.of(mockOrder));
 
             // When
