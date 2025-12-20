@@ -28,7 +28,6 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -91,11 +90,11 @@ class OrderControllerTest {
                 .andDo(print());
     }
 
-    // 3. 결제 검증 정보 조회 (String Key 수정 반영)
+    // 3. 결제 검증 정보 조회
     @Test
     @DisplayName("[GET] 결제 검증 정보 조회 성공 (200 OK)")
     void getPaymentInfo() throws Exception {
-        String orderKey = "test-uuid-1234"; // [수정] String 타입 사용
+        String orderKey = "test-uuid-1234";
         OrderValidationInfoResponse response = OrderValidationInfoResponse.builder()
                 .orderId(1L)
                 .paymentAmount(30000)
@@ -104,10 +103,9 @@ class OrderControllerTest {
                 .usedPoint(1000)
                 .build();
 
-        // [수정] String 타입으로 Mocking
         given(orderService.getValidationInfo(eq(orderKey))).willReturn(response);
 
-        mockMvc.perform(get("/api/orders/{orderKey}/payments", orderKey) // PathVariable도 String
+        mockMvc.perform(get("/api/orders/{orderKey}/payments", orderKey)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderKey").value(orderKey))
@@ -122,9 +120,10 @@ class OrderControllerTest {
         Long userId = 100L;
         OrderResponse orderRes = OrderResponse.builder()
                 .orderId(1L)
-                .status(DeliveryStatus.PENDING.name())
+                .status(DeliveryStatus.PAYMENT_WAITING.name())
                 .totalAmount(15000)
                 .build();
+
         Page<OrderResponse> pageResponse = new PageImpl<>(List.of(orderRes));
 
         given(orderService.getMyOrders(eq(userId), any(Pageable.class))).willReturn(pageResponse);
@@ -135,7 +134,9 @@ class OrderControllerTest {
                         .param("size", "10")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].orderId").value(1L))
+                // [수정] $.content -> $.data 로 변경
+                .andExpect(jsonPath("$.data[0].orderId").value(1L))
+                .andExpect(jsonPath("$.data[0].status").value("PAYMENT_WAITING"))
                 .andDo(print());
     }
 
@@ -146,7 +147,7 @@ class OrderControllerTest {
         Long orderId = 1L;
         OrderResponse response = OrderResponse.builder()
                 .orderId(orderId)
-                .status("SHIPPING")
+                .status(DeliveryStatus.DELIVERING.name())
                 .build();
 
         given(orderService.getOrderDetail(eq(orderId))).willReturn(response);
@@ -155,11 +156,10 @@ class OrderControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(orderId))
-                .andExpect(jsonPath("$.status").value("SHIPPING"))
+                .andExpect(jsonPath("$.status").value("DELIVERING"))
                 .andDo(print());
     }
 
-    // 6. 비회원 주문 조회
     @Test
     @DisplayName("[POST] 비회원 주문 조회 (200 OK)")
     void getGuestOrder() throws Exception {
@@ -169,7 +169,7 @@ class OrderControllerTest {
 
         OrderResponse response = OrderResponse.builder()
                 .orderId(1L)
-                .status("COMPLETED")
+                .status(DeliveryStatus.DELIVERY_COMPLETED.name())
                 .build();
 
         given(orderService.getGuestOrder(eq(1L), eq(1234))).willReturn(response);
@@ -179,7 +179,7 @@ class OrderControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(1L))
-                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.status").value("DELIVERY_COMPLETED"))
                 .andDo(print());
     }
 }
