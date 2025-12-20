@@ -97,7 +97,9 @@ public class OrderCreateRequest {
                 .receiverName(this.receiverName)
                 .receiverAddress(this.receiverAddress)
                 .orderDate(LocalDateTime.now())
-                .deliveryStatus(DeliveryStatus.PENDING)
+
+                .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+
                 .productAmount(calculation.getProductAmount())
                 .deliveryFee(calculation.getDeliveryFee())
                 .wrappingFee(calculation.getWrappingFee())
@@ -107,8 +109,6 @@ public class OrderCreateRequest {
                 .earnedPoint(calculation.getEarnedPoint())
 
                 .orderKey(orderKey)
-
-                // [수정] 암호화된 비밀번호 저장
                 .orderPassword(encryptedPassword)
                 .build();
     }
