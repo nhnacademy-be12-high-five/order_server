@@ -33,15 +33,6 @@ public class OrderController implements OrderControllerDocs {
         OrderCreateResponse response = orderService.createOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
-/*
-    @Override
-    @PostMapping("/{orderId}/payments")
-    public ResponseEntity<Void> paymentSuccess(
-            @PathVariable Long orderId,
-            @RequestParam String paymentKey) {
-        orderService.paymentSuccess(orderId, paymentKey);
-        return ResponseEntity.ok().build();
-    }*/
 
     @Override
     @GetMapping("/{orderKey}/payments")

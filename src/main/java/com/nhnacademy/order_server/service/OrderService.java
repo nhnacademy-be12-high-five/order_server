@@ -13,7 +13,6 @@ import org.springframework.data.domain.Pageable;
 
 public interface OrderService {
 
-   /* void paymentSuccess(Long orderId, String paymentKey);*/
     OrderValidationInfoResponse getValidationInfo(String orderKey);
     OrderCreateResponse createOrder(OrderCreateRequest request);
     Page<OrderResponse> getMyOrders(Long userId, Pageable pageable);

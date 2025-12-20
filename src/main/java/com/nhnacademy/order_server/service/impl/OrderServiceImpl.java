@@ -135,34 +135,6 @@ public class OrderServiceImpl implements OrderService {
         log.info("RabbitMQ 결제 메시지 처리 완료. OrderID={}", orderId);
     }
 
-   /* @Override
-    @Transactional
-    public void paymentSuccess(Long orderId, String paymentKey) {
-        log.info("결제 승인 요청 시작: orderId={}, key={}", orderId, paymentKey);
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        validateOrderStatus(order, DeliveryStatus.PENDING);
-
-        try {
-            confirmPaymentWithPg(order, paymentKey);
-            log.info("PG 승인 성공");
-        } catch (Exception e) {
-            log.error("PG 승인 실패: {}", e.getMessage(), e);
-            throw e;
-        }
-
-        order.updateStatus(DeliveryStatus.WAITING);
-        order.setPaymentKey(paymentKey);
-
-        try {
-            finalizeExternalResources(order);
-            log.info("외부 리소스 확정 성공");
-        } catch (Exception e) {
-            log.error("외부 리소스 확정 중 오류 발생 (롤백됨): {}", e.getMessage(), e);
-            throw e;
-        }
-    }*/
 
     @Override
     @Transactional
@@ -444,27 +416,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /*private void validateOrderStatus(Order order, DeliveryStatus expected) {
-        if (order.getDeliveryStatus() != expected) {
-            throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
-        }
-    }
-
-    private void confirmPaymentWithPg(Order order, String paymentKey) {
-        try {
-            PaymentConfirmRequest confirmRequest = PaymentConfirmRequest.builder()
-                    .paymentKey(paymentKey)
-                    .orderKey(order.getOrderKey())
-                    .amount(order.getPaymentAmount())
-                    .paymentMethod("Toss")
-                    .build();
-            paymentClient.confirmPayment(confirmRequest);
-        } catch (Exception e) {
-            log.error("결제 승인 실패: orderId={}, reason={}", order.getId(), e.getMessage());
-            throw new OrderException(OrderErrorCode.EXTERNAL_API_ERROR);
-        }
-    }*/
-
     // [수정] orderId 파라미터 추가
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
@@ -544,7 +495,7 @@ public class OrderServiceImpl implements OrderService {
         // 3. 쿠폰 복구
         if (order.getCouponId() != null) {
             try {
-                MemberCouponCancelRequest cancelReq = new MemberCouponCancelRequest(order.getCouponId());
+                MemberCouponCancelRequest cancelReq = new MemberCouponCancelRequest(order.getCouponId(), order.getId());
                 couponClient.cancelCouponUsage(order.getUserId(), cancelReq);
             } catch (Exception e) {
                 log.error("쿠폰 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());

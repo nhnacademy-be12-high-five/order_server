@@ -125,40 +125,6 @@ class OrderServiceImplTest {
             verify(bookClient).holdStockBatch(anyList(), anyString());
         }
     }
-/*
-    @Nested
-    @DisplayName("2. 결제 완료")
-    class PaymentSuccessTest {
-        @Test
-        @DisplayName("성공: 정상 처리")
-        void success() {
-            // given
-            Order mockOrder = Order.builder().build();
-            ReflectionTestUtils.setField(mockOrder, "id", 1L); // ID 설정
-            ReflectionTestUtils.setField(mockOrder, "deliveryStatus", DeliveryStatus.PENDING);
-            ReflectionTestUtils.setField(mockOrder, "userId", 100L);
-            ReflectionTestUtils.setField(mockOrder, "pointDiscount", 1000);
-            ReflectionTestUtils.setField(mockOrder, "orderKey", "order-key-123");
-
-            OrderItem item = OrderItem.builder().build();
-            ReflectionTestUtils.setField(item, "bookId", 1L);
-            mockOrder.addOrderItem(item);
-
-            when(orderRepository.findById(1L)).thenReturn(Optional.of(mockOrder));
-
-            // when
-            orderService.paymentSuccess(1L, "pay_key");
-
-            // then
-            assertThat(mockOrder.getDeliveryStatus()).isEqualTo(DeliveryStatus.WAITING);
-
-            // 재고 확정 확인
-            verify(bookClient).confirmStockDeduction(anyList(), eq("order-key-123"));
-
-            // [수정] 포인트 확정 호출 시 userId, amount, orderId(1L) 확인
-            verify(memberClient).confirmPoint(eq(100L), eq(1000), eq(1L));
-        }
-    }*/
 
     @Nested
     @DisplayName("3. 결제 검증 정보 조회")
