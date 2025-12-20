@@ -6,6 +6,7 @@ import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemReque
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
 import com.nhnacademy.order_server.dto.response.*;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
+import com.nhnacademy.order_server.service.DeliveryPolicyService;
 import com.nhnacademy.order_server.service.OrderService;
 import com.nhnacademy.order_server.service.WrapperService;
 import org.junit.jupiter.api.DisplayName;
@@ -58,6 +59,9 @@ class OrderControllerTest {
     @MockitoBean
     private RedisConnectionFactory redisConnectionFactory;
 
+    @MockitoBean
+    private DeliveryPolicyService deliveryPolicyService;
+
     // 1. 주문 생성
     @Test
     @DisplayName("[POST] 주문 생성 성공 (201 Created)")
@@ -85,22 +89,6 @@ class OrderControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.orderId").value(1L))
                 .andDo(print());
-    }
-
-    // 2. 결제 완료
-    @Test
-    @DisplayName("[POST] 결제 완료 처리 성공 (200 OK)")
-    void paymentSuccess() throws Exception {
-        Long orderId = 1L;
-        String paymentKey = "toss_payment_key_xyz";
-
-        mockMvc.perform(post("/api/orders/{orderId}/payments", orderId)
-                        .param("paymentKey", paymentKey)
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andDo(print());
-
-        verify(orderService).paymentSuccess(eq(orderId), eq(paymentKey));
     }
 
     // 3. 결제 검증 정보 조회 (String Key 수정 반영)

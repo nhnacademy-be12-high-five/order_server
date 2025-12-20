@@ -11,29 +11,25 @@ import java.util.List;
 @FeignClient(name = "TEAM5-BOOK-SERVER")
 public interface BookClient {
 
-/*    // 1. 단건 조회 (기존 유지)
-    @GetMapping("/api/books/{bookId}")
-    ResponseEntity<BookInfoResponse> getBookInfo(@PathVariable("bookId") Long bookId);*/
-
     @PostMapping("/api/books/bulk")
     ResponseEntity<List<BookInfoResponse>> getBooksBulk(@RequestBody List<Long> bookIds);
 
-    // 3. 재고 선점 (Batch)
+    // 재고 선점 (Batch)
     @PostMapping("/api/books/stock/hold/batch")
     ResponseEntity<Void> holdStockBatch(@RequestBody List<StockRequest> requests,
                                         @RequestParam("orderKey") String orderKey);
 
-    // 4. 재고 확정 (Confirm)
+    // 재고 확정 (Confirm)
     @PostMapping("/api/books/stock/confirm-deduction")
     ResponseEntity<Void> confirmStockDeduction(@RequestBody List<Long> bookIds,
                                                @RequestParam("orderKey") String orderKey);
 
-    // 5. 재고 복구 (Cancel/Refund)
+    // 재고 복구 (Cancel/Refund)
     @PostMapping("/api/books/stock/restore")
     ResponseEntity<Void> restoreStock(@RequestBody List<StockRequest> requests,
                                       @RequestHeader("Idempotency-Key") String idempotencyKey);
 
-    // 6. 단순 선점 해제 (Try Cancel)
+    // 단순 선점 해제 (Try Cancel)
     @PostMapping("/api/books/release-stock")
     ResponseEntity<Void> releaseHeldStock(@RequestBody List<Long> bookIds,
                                           @RequestParam("orderKey") String orderKey);

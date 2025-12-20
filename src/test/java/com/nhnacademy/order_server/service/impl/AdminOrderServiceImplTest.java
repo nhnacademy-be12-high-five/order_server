@@ -134,7 +134,7 @@ class AdminOrderServiceImplTest {
     @DisplayName("반품 승인 - 포인트 및 결제 환불")
     void processReturn_Approve() {
         // given
-        Long returnId = 1L;
+        Long returnId = 1L; // Order ID와 동일하게 동작
         Long userId = 100L;
         int pointDiscount = 1000;
         int refundAmount = 5000;
@@ -161,8 +161,11 @@ class AdminOrderServiceImplTest {
 
         // then
         assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN);
-        verify(memberClient).reservePoint(userId, pointDiscount); // 사용 포인트 환불
-        verify(paymentClient).cancelPayment(eq(paymentKey), any(PaymentCancelRequest.class)); // 결제 취소
+
+        // [수정] reservePoint -> cancelPoint 변경, 파라미터에 orderId(returnId) 추가
+        verify(memberClient).cancelPoint(userId, pointDiscount, returnId);
+
+        verify(paymentClient).cancelPayment(eq(paymentKey), any(PaymentCancelRequest.class));
     }
 
     @Test
@@ -180,7 +183,9 @@ class AdminOrderServiceImplTest {
 
         // then
         assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.COMPLETED);
-        verify(memberClient, times(0)).reservePoint(any(), any());
+
+        // [수정] 호출되지 않음을 검증 (메서드명 cancelPoint로 변경, 인자 개수 3개)
+        verify(memberClient, times(0)).cancelPoint(any(), any(), any());
         verify(paymentClient, times(0)).cancelPayment(any(), any());
     }
 }

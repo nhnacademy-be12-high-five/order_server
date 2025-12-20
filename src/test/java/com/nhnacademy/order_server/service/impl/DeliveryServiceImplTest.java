@@ -41,7 +41,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 기본 배송비 부과 (기준 금액 미만, 일반 지역)")
     void calculateDeliveryFee_Standard() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 10000; // 3만원 미만
         String address = "서울시 강남구";
 
@@ -56,7 +56,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 무료 배송 (기준 금액 이상, 일반 지역)")
     void calculateDeliveryFee_Free() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 50000; // 3만원 이상
         String address = "부산시 해운대구";
 
@@ -71,7 +71,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 경계값 테스트 (기준 금액과 동일)")
     void calculateDeliveryFee_Boundary_ExactAmount() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 30000; // 정확히 기준 금액
         String address = "서울시 강남구";
 
@@ -86,7 +86,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 도서산간 추가 요금 부과 (기준 금액 미만, 제주도)")
     void calculateDeliveryFee_Remote_Jeju() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 10000;
         String address = "제주특별자치도 제주시"; // '제주' 포함
 
@@ -101,7 +101,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 도서산간 무료 배송이지만 추가 요금은 부과 (기준 금액 이상, 도서 지역)")
     void calculateDeliveryFee_Free_But_Remote() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 50000; // 무료 배송 대상
         String address = "경상북도 울릉군 울릉읍 도서지역"; // '도서' 포함
 
@@ -122,7 +122,7 @@ class DeliveryServiceImplTest {
                 .remoteAreaSurcharge(null) // 정책값 null 설정
                 .build();
 
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(policyWithoutSurcharge);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(policyWithoutSurcharge);
         int productAmount = 10000;
         String address = "제주도 서귀포시";
 
@@ -163,7 +163,7 @@ class DeliveryServiceImplTest {
     @DisplayName("성공: 주소가 null이어도 에러 없이 일반 지역으로 처리")
     void calculateDeliveryFee_NullAddress() {
         // Given
-        when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
+        //when(deliveryPolicyService.getActivePolicyEntity()).thenReturn(activePolicy);
         int productAmount = 10000;
         String address = null; // 주소 없음
 

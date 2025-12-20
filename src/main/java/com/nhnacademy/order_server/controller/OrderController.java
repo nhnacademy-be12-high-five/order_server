@@ -35,15 +35,6 @@ public class OrderController implements OrderControllerDocs {
     }
 
     @Override
-    @PostMapping("/{orderId}/payments")
-    public ResponseEntity<Void> paymentSuccess(
-            @PathVariable Long orderId,
-            @RequestParam String paymentKey) {
-        orderService.paymentSuccess(orderId, paymentKey);
-        return ResponseEntity.ok().build();
-    }
-
-    @Override
     @GetMapping("/{orderKey}/payments")
     public ResponseEntity<OrderValidationInfoResponse> getPaymentInfo(@PathVariable String orderKey) {
         return ResponseEntity.ok(orderService.getValidationInfo(orderKey));
@@ -51,10 +42,13 @@ public class OrderController implements OrderControllerDocs {
 
     @Override
     @GetMapping
-    public ResponseEntity<Page<OrderResponse>> getMyOrders(
+    public ResponseEntity<CommonPageResponse<OrderResponse>> getMyOrders(
             @RequestHeader(value = "X-USER-ID") Long userId,
             Pageable pageable) {
-        return ResponseEntity.ok(orderService.getMyOrders(userId, pageable));
+
+        Page<OrderResponse> page = orderService.getMyOrders(userId, pageable);
+
+        return ResponseEntity.ok(new CommonPageResponse<>(page));
     }
 
     @Override
@@ -87,4 +81,6 @@ public class OrderController implements OrderControllerDocs {
         orderService.cancelOrder(orderId);
         return ResponseEntity.ok().build();
     }
+
+
 }
