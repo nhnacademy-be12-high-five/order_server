@@ -60,7 +60,8 @@ class AdminOrderServiceImplTest {
     void getOrders_All() {
         // given
         Pageable pageable = PageRequest.of(0, 10);
-        Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PENDING).build();
+        // [수정] PENDING -> PAYMENT_WAITING
+        Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PAYMENT_WAITING).build();
         given(orderRepository.findAll(pageable)).willReturn(new PageImpl<>(List.of(order)));
 
         // when
@@ -98,7 +99,8 @@ class AdminOrderServiceImplTest {
         ReflectionTestUtils.setField(request, "status", "DELIVERING");
         ReflectionTestUtils.setField(request, "trackingNumber", "1234567890");
 
-        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.WAITING).build();
+        // [수정] WAITING -> PREPARING (배송 준비 중에서 배송 중으로 변경)
+        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.PREPARING).build();
         Delivery delivery = Delivery.builder().order(order).build();
         ReflectionTestUtils.setField(order, "delivery", delivery);
 
@@ -121,7 +123,8 @@ class AdminOrderServiceImplTest {
         ReflectionTestUtils.setField(request, "status", "DELIVERING");
         // trackingNumber is null
 
-        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.WAITING).build();
+        // [수정] WAITING -> PREPARING
+        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.PREPARING).build();
         given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
 
         // when & then
@@ -134,7 +137,7 @@ class AdminOrderServiceImplTest {
     @DisplayName("반품 승인 - 포인트 및 결제 환불")
     void processReturn_Approve() {
         // given
-        Long returnId = 1L; // Order ID와 동일하게 동작
+        Long returnId = 1L;
         Long userId = 100L;
         int pointDiscount = 1000;
         int refundAmount = 5000;
@@ -145,7 +148,8 @@ class AdminOrderServiceImplTest {
                 .userId(userId)
                 .pointDiscount(pointDiscount)
                 .paymentKey(paymentKey)
-                .deliveryStatus(DeliveryStatus.COMPLETED)
+                // [수정] COMPLETED -> DELIVERY_COMPLETED
+                .deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED)
                 .build();
 
         OrderReturn orderReturn = OrderReturn.builder()
@@ -160,11 +164,13 @@ class AdminOrderServiceImplTest {
         adminOrderService.processReturn(returnId, true);
 
         // then
-        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN);
+        // [수정] RETURN -> RETURN_COMPLETED (반품 완료)
+        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
-        // [수정] reservePoint -> cancelPoint 변경, 파라미터에 orderId(returnId) 추가
+        // 포인트 환불 검증 (userId, amount, orderId)
         verify(memberClient).cancelPoint(userId, pointDiscount, returnId);
 
+        // 결제 취소 검증
         verify(paymentClient).cancelPayment(eq(paymentKey), any(PaymentCancelRequest.class));
     }
 
@@ -182,9 +188,10 @@ class AdminOrderServiceImplTest {
         adminOrderService.processReturn(returnId, false);
 
         // then
-        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.COMPLETED);
+        // [수정] COMPLETED -> DELIVERY_COMPLETED (배송 완료 상태로 원복)
+        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
 
-        // [수정] 호출되지 않음을 검증 (메서드명 cancelPoint로 변경, 인자 개수 3개)
+        // 호출되지 않음 검증 (인자 3개 확인)
         verify(memberClient, times(0)).cancelPoint(any(), any(), any());
         verify(paymentClient, times(0)).cancelPayment(any(), any());
     }

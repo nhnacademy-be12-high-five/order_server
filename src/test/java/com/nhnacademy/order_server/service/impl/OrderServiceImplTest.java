@@ -24,7 +24,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -89,7 +88,7 @@ class OrderServiceImplTest {
         ReflectionTestUtils.setField(request, "orderItems", List.of(itemReq));
 
         lenient().when(memberClient.getMemberGrade(anyLong())).thenReturn(mockGradeResponse);
-        // BookClient.getBooksBulk Mocking 추가 (createOrder 내부에서 호출됨)
+        // createOrder 내부에서 호출되는 bookClient.getBooksBulk에 대한 Mocking
         lenient().when(bookClient.getBooksBulk(anyList())).thenReturn(ResponseEntity.ok(List.of(mockBookInfo)));
         lenient().when(wrapperRepository.findAllById(any())).thenReturn(List.of(mockWrapper));
         lenient().when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
@@ -118,7 +117,7 @@ class OrderServiceImplTest {
             // then
             assertThat(response.getOrderId()).isEqualTo(1L);
 
-            // [수정] reservePoint 호출 시 userId, amount, orderId(1L) 확인
+            // reservePoint 호출 시 userId, amount, orderId(1L) 확인
             verify(memberClient).reservePoint(eq(100L), eq(1000), eq(1L));
 
             // 재고 선점 호출 확인 (holdStockBatch)
@@ -163,7 +162,8 @@ class OrderServiceImplTest {
             Pageable pageable = PageRequest.of(0, 10);
             Order order = Order.builder().build();
             ReflectionTestUtils.setField(order, "id", 1L);
-            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.PENDING);
+            // [수정] PENDING -> PAYMENT_WAITING
+            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.PAYMENT_WAITING);
             ReflectionTestUtils.setField(order, "paymentAmount", 20000);
             OrderItem item = OrderItem.builder().build();
             ReflectionTestUtils.setField(item, "bookTitle", "Test Book");
@@ -173,7 +173,8 @@ class OrderServiceImplTest {
 
             when(orderRepository.findAllByUserId(userId, pageable)).thenReturn(new PageImpl<>(List.of(order)));
 
-            Page<OrderResponse> result = orderService.getMyOrders(userId, pageable);
+
+            var result = orderService.getMyOrders(userId, pageable);
 
             assertThat(result.getContent()).hasSize(1);
             assertThat(result.getContent().get(0).getItems().get(0).getBookTitle()).isEqualTo("Test Book");
@@ -202,14 +203,14 @@ class OrderServiceImplTest {
             Integer password = 1234;
             Order order = Order.builder().build();
             ReflectionTestUtils.setField(order, "id", orderId);
-            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.COMPLETED);
+            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.DELIVERY_COMPLETED);
 
             when(orderRepository.findByIdAndOrderPassword(orderId, password)).thenReturn(Optional.of(order));
 
             OrderResponse response = orderService.getGuestOrder(orderId, password);
 
             assertThat(response.getOrderId()).isEqualTo(orderId);
-            assertThat(response.getStatus()).isEqualTo("COMPLETED");
+            assertThat(response.getStatus()).isEqualTo("DELIVERY_COMPLETED");
         }
     }
 }
