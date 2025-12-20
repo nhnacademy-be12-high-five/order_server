@@ -12,12 +12,14 @@ import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.service.OrderReturnService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -33,39 +35,46 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        if (order.getDeliveryStatus() != DeliveryStatus.COMPLETED) {
-            return OrderReturnCheckResponse.ofIneligible("배송이 완료되지 않은 주문입니다.");
+        // 1. 상태 검증: 배송 완료 상태여야 함
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
+            return OrderReturnCheckResponse.ofIneligible("이미 구매 확정된 주문은 반품할 수 없습니다.");
         }
+        if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
+            return OrderReturnCheckResponse.ofIneligible("배송 완료 상태의 주문만 반품 신청이 가능합니다.");
+        }
+
+        // 2. 중복 신청 검증
         if (order.getOrderReturn() != null) {
             return OrderReturnCheckResponse.ofIneligible("이미 반품 접수된 주문입니다.");
         }
+
+        // 3. 배송 정보 검증
         if (order.getDelivery() == null || order.getDelivery().getActualShipDate() == null) {
             return OrderReturnCheckResponse.ofIneligible("배송 정보를 확인할 수 없습니다.");
         }
 
+        // 4. 기간 검증
         LocalDateTime shipmentDate = order.getDelivery().getActualShipDate();
         long daysPassed = ChronoUnit.DAYS.between(shipmentDate, LocalDateTime.now());
 
-        int allowedDays = 30;
+        int allowedDays = 30; // 기본 30일
         int estimatedFee = 0;
 
-        if (returnReason != null) {
-            if (returnReason == ReturnReason.SIMPLE_CHANGE) {
-                allowedDays = 10;
-                estimatedFee = RETURN_SHIPPING_FEE;
-            } else {
-                allowedDays = 30;
-                estimatedFee = 0;
-            }
-        } else {
-
-            allowedDays = 30;
+        // 단순 변심: 10일 이내, 반품비 발생
+        if (returnReason == ReturnReason.SIMPLE_CHANGE) {
+            allowedDays = 10;
             estimatedFee = RETURN_SHIPPING_FEE;
+        } else if (returnReason != null) {
+            // 귀책 사유 등: 30일 이내, 무료
+            allowedDays = 30;
+            estimatedFee = 0;
         }
 
         if (daysPassed > allowedDays) {
             return OrderReturnCheckResponse.ofIneligible("반품 가능 기한(" + allowedDays + "일)이 지났습니다.");
         }
+
+        // 5. 환불 예정 금액 계산
         int paymentAmount = order.getPaymentAmount();
         int estimatedRefund = Math.max(paymentAmount - estimatedFee, 0);
 
@@ -78,9 +87,15 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        if (order.getDeliveryStatus() != DeliveryStatus.COMPLETED) {
+        // [변경] 구매 확정 상태 체크 추가
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
+            throw new OrderException(OrderErrorCode.ALREADY_PURCHASE_CONFIRMED); // 구매확정된 건 반품 불가
+        }
+        // [변경] COMPLETED -> DELIVERY_COMPLETED
+        if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
             throw new OrderException(OrderErrorCode.RETURN_NOT_ELIGIBLE);
         }
+
         if (order.getOrderReturn() != null) {
             throw new OrderException(OrderErrorCode.ALREADY_RETURN_REQUESTED);
         }
@@ -89,6 +104,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
 
         int refundAmount = order.getPaymentAmount();
         int appliedReturnFee = 0;
+
+        // 단순 변심일 경우 반품비 차감
         if (request.getReturnReason() == ReturnReason.SIMPLE_CHANGE) {
             appliedReturnFee = RETURN_SHIPPING_FEE;
             refundAmount -= appliedReturnFee;
@@ -104,7 +121,11 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 .build();
 
         orderReturnRepository.save(orderReturn);
+
+        // 상태 변경: DELIVERY_COMPLETED -> RETURN_REQUESTED
         order.updateStatus(DeliveryStatus.RETURN_REQUESTED);
+
+        log.info("반품 신청 완료: OrderID={}, Reason={}, RefundAmount={}", orderId, request.getReturnReason(), refundAmount);
     }
 
     private void validateReturnPeriod(Order order, ReturnReason reason) {

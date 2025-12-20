@@ -24,7 +24,6 @@ public class WrapperServiceImpl implements WrapperService {
     @Override
     @Transactional
     public void createWrapper(WrapperRegisterRequest request) {
-        // DTO -> Entity 변환 위임
         wrapperRepository.save(request.toEntity());
     }
 
