@@ -20,5 +20,6 @@ public interface OrderService {
     OrderResponse getGuestOrder(Long orderId, Integer password);
     void cancelOrder(Long orderId);
     void processPaymentSuccessMessage(PaymentSuccessMessage message);
+    void cancelExpiredOrders();
 
 }

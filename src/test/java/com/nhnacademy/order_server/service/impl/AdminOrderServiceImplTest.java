@@ -15,6 +15,7 @@ import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -34,8 +35,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOrderServiceImplTest {
@@ -55,144 +56,258 @@ class AdminOrderServiceImplTest {
     @Mock
     private PaymentClient paymentClient;
 
-    @Test
-    @DisplayName("주문 목록 조회 - 전체 조회")
-    void getOrders_All() {
-        // given
-        Pageable pageable = PageRequest.of(0, 10);
-        // [수정] PENDING -> PAYMENT_WAITING
-        Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PAYMENT_WAITING).build();
-        given(orderRepository.findAll(pageable)).willReturn(new PageImpl<>(List.of(order)));
+    @Nested
+    @DisplayName("1. 주문 목록 조회")
+    class GetOrdersTest {
+        @Test
+        @DisplayName("전체 조회 성공")
+        void getOrders_All() {
+            // given
+            Pageable pageable = PageRequest.of(0, 10);
+            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PAYMENT_WAITING).build();
+            given(orderRepository.findAll(pageable)).willReturn(new PageImpl<>(List.of(order)));
 
-        // when
-        Page<OrderResponse> result = adminOrderService.getOrders(pageable, null);
+            // when
+            Page<OrderResponse> result = adminOrderService.getOrders(pageable, null);
 
-        // then
-        assertThat(result.getContent()).hasSize(1);
-        verify(orderRepository).findAll(pageable);
+            // then
+            assertThat(result.getContent()).hasSize(1);
+            verify(orderRepository).findAll(pageable);
+        }
+
+        @Test
+        @DisplayName("상태 필터링 조회 성공")
+        void getOrders_WithStatus() {
+            // given
+            Pageable pageable = PageRequest.of(0, 10);
+            String status = "DELIVERING";
+            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.DELIVERING).build();
+            given(orderRepository.findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable))
+                    .willReturn(new PageImpl<>(List.of(order)));
+
+            // when
+            Page<OrderResponse> result = adminOrderService.getOrders(pageable, status);
+
+            // then
+            assertThat(result.getContent()).hasSize(1);
+            verify(orderRepository).findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable);
+        }
+
+        @Test
+        @DisplayName("잘못된 상태값으로 조회 시 예외 발생")
+        void getOrders_InvalidStatus() {
+            // given
+            Pageable pageable = PageRequest.of(0, 10);
+            String invalidStatus = "UNKNOWN_STATUS";
+
+            // when & then
+            assertThatThrownBy(() -> adminOrderService.getOrders(pageable, invalidStatus))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
+        }
     }
 
-    @Test
-    @DisplayName("주문 목록 조회 - 상태 필터링")
-    void getOrders_WithStatus() {
-        // given
-        Pageable pageable = PageRequest.of(0, 10);
-        String status = "DELIVERING";
-        Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.DELIVERING).build();
-        given(orderRepository.findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable))
-                .willReturn(new PageImpl<>(List.of(order)));
+    @Nested
+    @DisplayName("2. 주문 상태 변경")
+    class UpdateOrderStatusTest {
 
-        // when
-        Page<OrderResponse> result = adminOrderService.getOrders(pageable, status);
+        private OrderStatusUpdateRequest request;
+        private Order order;
+        private Delivery delivery;
 
-        // then
-        assertThat(result.getContent()).hasSize(1);
-        verify(orderRepository).findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable);
+        @Test
+        @DisplayName("배송 중(DELIVERING) 변경 성공")
+        void updateToDelivering_Success() {
+            // given
+            setUpOrder(DeliveryStatus.PREPARING);
+            setUpRequest("DELIVERING", "1234567890");
+
+            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+            // when
+            adminOrderService.updateOrderStatus(1L, request);
+
+            // then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERING);
+            assertThat(order.getDelivery().getTrackingNumber()).isEqualTo("1234567890");
+        }
+
+        @Test
+        @DisplayName("배송 중 변경 실패 - 송장 번호 누락")
+        void updateToDelivering_Fail_NoTrackingNumber() {
+            // given
+            setUpOrder(DeliveryStatus.PREPARING);
+            setUpRequest("DELIVERING", ""); // Blank
+
+            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+            // when & then
+            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, request))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
+        }
+
+        @Test
+        @DisplayName("배송 완료(DELIVERY_COMPLETED) 변경 성공")
+        void updateToDeliveryCompleted_Success() {
+            // given
+            setUpOrder(DeliveryStatus.DELIVERING);
+            setUpRequest("DELIVERY_COMPLETED", null);
+
+            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+            // when
+            adminOrderService.updateOrderStatus(1L, request);
+
+            // then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
+            // Delivery 엔티티의 completeDelivery()가 호출되었는지 간접 확인 (상태 변경 로직에 포함됨)
+        }
+
+        @Test
+        @DisplayName("구매 확정(PURCHASE_CONFIRMED) 변경 성공")
+        void updateToPurchaseConfirmed_Success() {
+            // given
+            setUpOrder(DeliveryStatus.DELIVERY_COMPLETED); // 배송 완료 상태여야 함
+            setUpRequest("PURCHASE_CONFIRMED", null);
+
+            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+            // when
+            adminOrderService.updateOrderStatus(1L, request);
+
+            // then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.PURCHASE_CONFIRMED);
+        }
+
+        @Test
+        @DisplayName("구매 확정 변경 실패 - 배송 완료 상태가 아님")
+        void updateToPurchaseConfirmed_Fail_InvalidStatus() {
+            // given
+            setUpOrder(DeliveryStatus.DELIVERING); // 아직 배송 중
+            setUpRequest("PURCHASE_CONFIRMED", null);
+
+            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
+
+            // when & then
+            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, request))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
+        }
+
+        private void setUpOrder(DeliveryStatus status) {
+            order = Order.builder().id(1L).deliveryStatus(status).build();
+            delivery = Delivery.builder().order(order).build();
+            ReflectionTestUtils.setField(order, "delivery", delivery);
+        }
+
+        private void setUpRequest(String status, String trackingNumber) {
+            request = new OrderStatusUpdateRequest();
+            ReflectionTestUtils.setField(request, "status", status);
+            ReflectionTestUtils.setField(request, "trackingNumber", trackingNumber);
+        }
     }
 
-    @Test
-    @DisplayName("주문 상태 변경 - 배송 중 (성공)")
-    void updateOrderStatus_Delivering_Success() {
-        // given
-        Long orderId = 1L;
-        OrderStatusUpdateRequest request = new OrderStatusUpdateRequest();
-        ReflectionTestUtils.setField(request, "status", "DELIVERING");
-        ReflectionTestUtils.setField(request, "trackingNumber", "1234567890");
+    @Nested
+    @DisplayName("3. 반품 처리")
+    class ProcessReturnTest {
 
-        // [수정] WAITING -> PREPARING (배송 준비 중에서 배송 중으로 변경)
-        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.PREPARING).build();
-        Delivery delivery = Delivery.builder().order(order).build();
-        ReflectionTestUtils.setField(order, "delivery", delivery);
+        private Order order;
+        private OrderReturn orderReturn;
 
-        given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+        @Test
+        @DisplayName("반품 승인 - 전체 성공 (포인트 환불 + 적립 회수 + PG 취소)")
+        void processReturn_Approve_FullSuccess() {
+            // given
+            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 1000, 500); // 1000원 사용, 500원 적립됨
+            ReflectionTestUtils.setField(order, "paymentKey", "toss_key");
 
-        // when
-        adminOrderService.updateOrderStatus(orderId, request);
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
 
-        // then
-        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERING);
-        assertThat(order.getDelivery().getTrackingNumber()).isEqualTo("1234567890");
-    }
+            // when
+            adminOrderService.processReturn(1L, true);
 
-    @Test
-    @DisplayName("주문 상태 변경 - 배송 중인데 송장 번호 없음 (실패)")
-    void updateOrderStatus_Delivering_NoTrackingNumber() {
-        // given
-        Long orderId = 1L;
-        OrderStatusUpdateRequest request = new OrderStatusUpdateRequest();
-        ReflectionTestUtils.setField(request, "status", "DELIVERING");
-        // trackingNumber is null
+            // then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
-        // [수정] WAITING -> PREPARING
-        Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.PREPARING).build();
-        given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+            // 1. 사용 포인트 환불 (orderId 포함 검증)
+            verify(memberClient).cancelPoint(eq(100L), eq(1000), eq(1L));
 
-        // when & then
-        assertThatThrownBy(() -> adminOrderService.updateOrderStatus(orderId, request))
-                .isInstanceOf(OrderException.class)
-                .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
-    }
+            // 2. 적립 포인트 회수
+            verify(memberClient).deductPoint(eq(100L), eq(500));
 
-    @Test
-    @DisplayName("반품 승인 - 포인트 및 결제 환불")
-    void processReturn_Approve() {
-        // given
-        Long returnId = 1L;
-        Long userId = 100L;
-        int pointDiscount = 1000;
-        int refundAmount = 5000;
-        String paymentKey = "toss_key";
+            // 3. PG 취소
+            verify(paymentClient).cancelPayment(eq("toss_key"), any(PaymentCancelRequest.class));
+        }
 
-        Order order = Order.builder()
-                .id(returnId)
-                .userId(userId)
-                .pointDiscount(pointDiscount)
-                .paymentKey(paymentKey)
-                // [수정] COMPLETED -> DELIVERY_COMPLETED
-                .deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED)
-                .build();
+        @Test
+        @DisplayName("반품 승인 실패 - 포인트 서버 오류")
+        void processReturn_Approve_Fail_MemberService() {
+            // given
+            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 1000, 0);
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
 
-        OrderReturn orderReturn = OrderReturn.builder()
-                .order(order)
-                .refundAmount(refundAmount)
-                .returnReason(ReturnReason.PRODUCT_DEFECT)
-                .build();
+            // 포인트 환불 시 예외 발생
+            willThrow(new RuntimeException("Connection Refused"))
+                    .given(memberClient).cancelPoint(anyLong(), anyInt(), anyLong());
 
-        given(orderReturnRepository.findByIdWithOrder(returnId)).willReturn(Optional.of(orderReturn));
+            // when & then
+            assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.MEMBER_SERVICE_ERROR);
+        }
 
-        // when
-        adminOrderService.processReturn(returnId, true);
+        @Test
+        @DisplayName("반품 승인 실패 - PG 서버 오류")
+        void processReturn_Approve_Fail_PGService() {
+            // given
+            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 0, 0); // 포인트 사용 X
+            ReflectionTestUtils.setField(order, "paymentKey", "toss_key");
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
 
-        // then
-        // [수정] RETURN -> RETURN_COMPLETED (반품 완료)
-        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
+            // PG 취소 시 예외 발생
+            willThrow(new RuntimeException("PG Error"))
+                    .given(paymentClient).cancelPayment(anyString(), any());
 
-        // 포인트 환불 검증 (userId, amount, orderId)
-        verify(memberClient).cancelPoint(userId, pointDiscount, returnId);
+            // when & then
+            assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.EXTERNAL_API_ERROR);
+        }
 
-        // 결제 취소 검증
-        verify(paymentClient).cancelPayment(eq(paymentKey), any(PaymentCancelRequest.class));
-    }
+        @Test
+        @DisplayName("반품 거절 - 상태 원복")
+        void processReturn_Reject() {
+            // given
+            setUpReturn(DeliveryStatus.RETURN_REQUESTED, 0, 0);
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
 
-    @Test
-    @DisplayName("반품 거절 - 상태 원복")
-    void processReturn_Reject() {
-        // given
-        Long returnId = 1L;
-        Order order = Order.builder().id(returnId).deliveryStatus(DeliveryStatus.RETURN_REQUESTED).build();
-        OrderReturn orderReturn = OrderReturn.builder().order(order).build();
+            // when
+            adminOrderService.processReturn(1L, false);
 
-        given(orderReturnRepository.findByIdWithOrder(returnId)).willReturn(Optional.of(orderReturn));
+            // then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
 
-        // when
-        adminOrderService.processReturn(returnId, false);
+            // 외부 서비스 호출 안됨 검증
+            verify(memberClient, times(0)).cancelPoint(any(), any(), any());
+            verify(paymentClient, times(0)).cancelPayment(any(), any());
+        }
 
-        // then
-        // [수정] COMPLETED -> DELIVERY_COMPLETED (배송 완료 상태로 원복)
-        assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
+        private void setUpReturn(DeliveryStatus status, int usedPoint, int earnedPoint) {
+            order = Order.builder()
+                    .id(1L)
+                    .userId(100L)
+                    .pointDiscount(usedPoint)
+                    .earnedPoint(earnedPoint)
+                    .deliveryStatus(status)
+                    .paymentAmount(5000)
+                    .build();
 
-        // 호출되지 않음 검증 (인자 3개 확인)
-        verify(memberClient, times(0)).cancelPoint(any(), any(), any());
-        verify(paymentClient, times(0)).cancelPayment(any(), any());
+            orderReturn = OrderReturn.builder()
+                    .order(order)
+                    .refundAmount(5000)
+                    .returnReason(ReturnReason.PRODUCT_DEFECT)
+                    .build();
+        }
     }
 }

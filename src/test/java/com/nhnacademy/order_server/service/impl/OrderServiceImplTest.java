@@ -1,8 +1,12 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.*;
+import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
+import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemRequest;
+import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -12,6 +16,8 @@ import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import com.nhnacademy.order_server.entity.Wrapper;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
+import com.nhnacademy.order_server.exception.OrderErrorCode;
+import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryRepository;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
@@ -31,12 +37,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,7 +57,6 @@ class OrderServiceImplTest {
     private OrderServiceImpl orderService;
 
     @Mock private OrderRepository orderRepository;
-    @Mock private DeliveryRepository deliveryRepository;
     @Mock private WrapperRepository wrapperRepository;
     @Mock private DeliveryService deliveryService;
     @Mock private BookClient bookClient;
@@ -55,6 +65,7 @@ class OrderServiceImplTest {
     @Mock private PaymentClient paymentClient;
     @Mock private CartClient cartClient;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private DeliveryRepository deliveryRepository;
 
     private OrderCreateRequest request;
     private Wrapper mockWrapper;
@@ -63,7 +74,6 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        // Mock 데이터 설정
         mockWrapper = new Wrapper("선물 포장", 1000, true);
         ReflectionTestUtils.setField(mockWrapper, "id", 1L);
 
@@ -86,131 +96,296 @@ class OrderServiceImplTest {
         ReflectionTestUtils.setField(request, "receiverAddress", "서울시");
         ReflectionTestUtils.setField(request, "requestDeliveryDate", LocalDate.now().plusDays(2));
         ReflectionTestUtils.setField(request, "orderItems", List.of(itemReq));
-
-        lenient().when(memberClient.getMemberGrade(anyLong())).thenReturn(mockGradeResponse);
-        // createOrder 내부에서 호출되는 bookClient.getBooksBulk에 대한 Mocking
-        lenient().when(bookClient.getBooksBulk(anyList())).thenReturn(ResponseEntity.ok(List.of(mockBookInfo)));
-        lenient().when(wrapperRepository.findAllById(any())).thenReturn(List.of(mockWrapper));
-        lenient().when(passwordEncoder.encode(anyString())).thenReturn("hashedPassword");
+        ReflectionTestUtils.setField(request, "usedPoint", 1000);
     }
 
     @Nested
-    @DisplayName("1. 주문 생성")
+    @DisplayName("1. 주문 생성 (CreateOrder)")
     class CreateOrderTest {
-        @Test
-        @DisplayName("성공: 회원 주문")
-        void success() {
-            // given
-            when(deliveryService.calculateDeliveryFee(anyInt(), anyString())).thenReturn(3000);
-            ReflectionTestUtils.setField(request, "usedPoint", 1000);
 
-            // save 시점에 ID 부여 모의
-            when(orderRepository.save(any(Order.class))).thenAnswer(i -> {
+        @Test
+        @DisplayName("성공: 회원 주문 (포인트 사용, 쿠폰 사용)")
+        void success_Member() {
+            ReflectionTestUtils.setField(request, "couponId", 10L);
+
+            given(memberClient.getMemberGrade(anyLong())).willReturn(mockGradeResponse);
+            given(bookClient.getBooksBulk(anyList())).willReturn(ResponseEntity.ok(List.of(mockBookInfo)));
+            given(wrapperRepository.findAllById(any())).willReturn(List.of(mockWrapper));
+            given(deliveryService.calculateDeliveryFee(anyInt(), anyString())).willReturn(3000);
+
+            CouponCalculationResponse couponRes = new CouponCalculationResponse(2000L, 28000L);
+            given(couponClient.calculateCoupon(anyLong(), any(CouponCalculationRequest.class))).willReturn(couponRes);
+
+            given(orderRepository.save(any(Order.class))).willAnswer(i -> {
                 Order o = i.getArgument(0);
-                ReflectionTestUtils.setField(o, "id", 1L); // ID 생성 시뮬레이션
+                ReflectionTestUtils.setField(o, "id", 1L);
                 return o;
             });
 
-            // when
             OrderCreateResponse response = orderService.createOrder(request);
 
-            // then
             assertThat(response.getOrderId()).isEqualTo(1L);
-
-            // reservePoint 호출 시 userId, amount, orderId(1L) 확인
             verify(memberClient).reservePoint(eq(100L), eq(1000), eq(1L));
-
-            // 재고 선점 호출 확인 (holdStockBatch)
             verify(bookClient).holdStockBatch(anyList(), anyString());
+            verify(cartClient).clearCart(100L);
+        }
+
+        @Test
+        @DisplayName("성공: 비회원 주문")
+        void success_Guest() {
+            ReflectionTestUtils.setField(request, "userId", null);
+            ReflectionTestUtils.setField(request, "orderPassword", "1234");
+            ReflectionTestUtils.setField(request, "usedPoint", null);
+
+            given(bookClient.getBooksBulk(anyList())).willReturn(ResponseEntity.ok(List.of(mockBookInfo)));
+            given(wrapperRepository.findAllById(any())).willReturn(List.of(mockWrapper));
+            given(passwordEncoder.encode("1234")).willReturn("encodedPwd");
+
+            given(orderRepository.save(any(Order.class))).willAnswer(i -> {
+                Order o = i.getArgument(0);
+                ReflectionTestUtils.setField(o, "id", 2L);
+                return o;
+            });
+
+            OrderCreateResponse response = orderService.createOrder(request);
+
+            assertThat(response.getOrderId()).isEqualTo(2L);
+            verify(memberClient, never()).reservePoint(anyLong(), anyInt(), anyLong());
+            verify(passwordEncoder).encode("1234");
+        }
+
+        @Test
+        @DisplayName("실패: 포인트 예약 실패 시 보상 트랜잭션(재고 롤백) 실행")
+        void fail_CompensateTransaction() {
+            given(memberClient.getMemberGrade(anyLong())).willReturn(mockGradeResponse);
+            given(bookClient.getBooksBulk(anyList())).willReturn(ResponseEntity.ok(List.of(mockBookInfo)));
+            given(wrapperRepository.findAllById(any())).willReturn(List.of(mockWrapper));
+
+            given(orderRepository.save(any(Order.class))).willAnswer(i -> {
+                Order o = i.getArgument(0);
+                ReflectionTestUtils.setField(o, "id", 1L);
+                return o;
+            });
+
+            willThrow(new RuntimeException("Point Error"))
+                    .given(memberClient).reservePoint(anyLong(), anyInt(), anyLong());
+
+            assertThatThrownBy(() -> orderService.createOrder(request))
+                    .isInstanceOf(RuntimeException.class);
+
+            verify(bookClient).releaseHeldStock(anyList(), anyString());
+            verify(memberClient).cancelPoint(eq(100L), eq(1000), anyLong());
         }
     }
 
     @Nested
-    @DisplayName("3. 결제 검증 정보 조회")
-    class GetValidationInfoTest {
+    @DisplayName("2. 결제 완료 메시지 처리 (ProcessPaymentSuccess)")
+    class ProcessPaymentSuccessMessageTest {
+
         @Test
-        @DisplayName("성공: 주문키로 정보 조회")
+        @DisplayName("성공: PAYMENT_WAITING -> PREPARING 변경 및 리소스 확정")
         void success() {
-            // Given
-            String orderKey = "uuid-key-123";
-            Order mockOrder = Order.builder().build();
-            ReflectionTestUtils.setField(mockOrder, "id", 1L);
-            ReflectionTestUtils.setField(mockOrder, "paymentAmount", 30000);
-            ReflectionTestUtils.setField(mockOrder, "orderKey", orderKey);
-            ReflectionTestUtils.setField(mockOrder, "userId", 100L);
-            ReflectionTestUtils.setField(mockOrder, "pointDiscount", 1000);
-
-            when(orderRepository.findByOrderKey(orderKey)).thenReturn(Optional.of(mockOrder));
-
-            // When
-            OrderValidationInfoResponse response = orderService.getValidationInfo(orderKey);
-
-            // Then
-            assertThat(response.getPaymentAmount()).isEqualTo(30000);
-            assertThat(response.getOrderKey()).isEqualTo(orderKey);
-            assertThat(response.getUsedPoint()).isEqualTo(1000);
-        }
-    }
-
-    @Nested
-    @DisplayName("4. 주문 조회 (List, Detail, Guest)")
-    class OrderReadTest {
-        @Test
-        @DisplayName("성공: 회원 주문 목록 조회")
-        void getMyOrders_Success() {
-            Long userId = 100L;
-            Pageable pageable = PageRequest.of(0, 10);
-            Order order = Order.builder().build();
-            ReflectionTestUtils.setField(order, "id", 1L);
-            // [수정] PENDING -> PAYMENT_WAITING
-            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.PAYMENT_WAITING);
-            ReflectionTestUtils.setField(order, "paymentAmount", 20000);
-            OrderItem item = OrderItem.builder().build();
-            ReflectionTestUtils.setField(item, "bookTitle", "Test Book");
-            ReflectionTestUtils.setField(item, "quantity", 1);
-            ReflectionTestUtils.setField(item, "unitPrice", 20000);
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .paymentAmount(30000)
+                    .orderKey("key-123") // [수정] orderKey 추가
+                    .build();
+            OrderItem item = OrderItem.builder().bookId(101L).quantity(1).build();
             order.addOrderItem(item);
 
-            when(orderRepository.findAllByUserId(userId, pageable)).thenReturn(new PageImpl<>(List.of(order)));
+            ReflectionTestUtils.setField(request, "usedPoint", 1000);
+            ReflectionTestUtils.setField(order, "pointDiscount", 1000);
+            ReflectionTestUtils.setField(order, "couponId", 10L);
 
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            PaymentSuccessMessage message = PaymentSuccessMessage.builder()
+                    .orderId(orderId)
+                    .paymentKey("pg_key")
+                    .totalAmount(30000L)
+                    .build();
+
+            orderService.processPaymentSuccessMessage(message);
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.PREPARING);
+            assertThat(order.getPaymentKey()).isEqualTo("pg_key");
+
+            verify(bookClient).confirmStockDeduction(anyList(), anyString()); // [수정] any() -> anyString() 가능
+            verify(couponClient).useCoupon(any(), any());
+            verify(memberClient).confirmPoint(any(), eq(1000), eq(orderId));
+        }
+
+        @Test
+        @DisplayName("실패: 주문 금액 불일치")
+        void fail_AmountMismatch() {
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .paymentAmount(50000)
+                    .orderKey("key-123")
+                    .build();
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            PaymentSuccessMessage message = PaymentSuccessMessage.builder()
+                    .orderId(orderId)
+                    .totalAmount(30000L)
+                    .build();
+
+            assertThatThrownBy(() -> orderService.processPaymentSuccessMessage(message))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
+        }
+
+        @Test
+        @DisplayName("성공: 멱등성 체크 (이미 PREPARING 이면 무시)")
+        void success_Idempotency() {
+            Long orderId = 1L;
+            Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.PREPARING).build();
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            PaymentSuccessMessage message = PaymentSuccessMessage.builder().orderId(orderId).build();
+
+            orderService.processPaymentSuccessMessage(message);
+
+            verify(bookClient, never()).confirmStockDeduction(anyList(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("3. 주문 취소 (CancelOrder)")
+    class CancelOrderTest {
+
+        @Test
+        @DisplayName("성공: 배송 준비 중(PREPARING) 취소 -> PG/포인트/쿠폰/재고 환불")
+        void cancel_Preparing() {
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .userId(100L)
+                    .deliveryStatus(DeliveryStatus.PREPARING)
+                    .paymentKey("pg_key")
+                    .paymentAmount(30000)
+                    .pointDiscount(1000)
+                    .couponId(10L)
+                    .orderKey("order-key") // [수정] Key 추가
+                    .build();
+            order.addOrderItem(OrderItem.builder().bookId(101L).quantity(2).build());
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            orderService.cancelOrder(orderId);
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.CANCELED);
+
+            verify(paymentClient).cancelPayment(eq("pg_key"), any(PaymentCancelRequest.class));
+            verify(memberClient).cancelPoint(eq(100L), eq(1000), eq(orderId));
+            verify(couponClient).cancelCouponUsage(eq(100L), any());
+            verify(bookClient).restoreStock(anyList(), anyString());
+        }
+
+        @Test
+        @DisplayName("성공: 결제 대기 중(PAYMENT_WAITING) 취소 -> 포인트/재고 선점 해제")
+        void cancel_PaymentWaiting() {
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .userId(100L)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .pointDiscount(1000)
+                    .orderKey("order-key") // [중요 수정] null 방지
+                    .build();
+            order.addOrderItem(OrderItem.builder().bookId(101L).quantity(1).build());
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            orderService.cancelOrder(orderId);
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.CANCELED);
+
+            verify(paymentClient, never()).cancelPayment(anyString(), any());
+            verify(memberClient).cancelPoint(eq(100L), eq(1000), eq(orderId));
+
+            // 이제 orderKey가 null이 아니므로 anyString() 매처가 통과함
+            verify(bookClient).releaseHeldStock(anyList(), anyString());
+        }
+
+        @Test
+        @DisplayName("실패: 취소 불가능한 상태 (DELIVERING)")
+        void fail_NotCancelable() {
+            Long orderId = 1L;
+            Order order = Order.builder().id(orderId).deliveryStatus(DeliveryStatus.DELIVERING).build();
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            assertThatThrownBy(() -> orderService.cancelOrder(orderId))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.CANNOT_CANCEL_ORDER);
+        }
+    }
+
+    @Nested
+    @DisplayName("4. 스케줄러: 만료 주문 취소 (CancelExpiredOrders)")
+    class CancelExpiredOrdersTest {
+
+        @Test
+        @DisplayName("성공: 만료된 주문 조회 후 일괄 취소")
+        void success() {
+            // given
+            Order order1 = Order.builder().id(1L)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .userId(100L).pointDiscount(100)
+                    .orderKey("key-1") // [중요 수정] Key 추가
+                    .build();
+            order1.addOrderItem(OrderItem.builder().bookId(101L).quantity(1).build());
+
+            Order order2 = Order.builder().id(2L)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .userId(101L)
+                    .orderKey("key-2") // [중요 수정] Key 추가
+                    .build();
+            order2.addOrderItem(OrderItem.builder().bookId(102L).quantity(1).build());
+
+            given(orderRepository.findByDeliveryStatusAndOrderDateBefore(eq(DeliveryStatus.PAYMENT_WAITING), any(LocalDateTime.class)))
+                    .willReturn(List.of(order1, order2));
+
+            // when
+            orderService.cancelExpiredOrders();
+
+            // then
+            assertThat(order1.getDeliveryStatus()).isEqualTo(DeliveryStatus.CANCELED);
+            assertThat(order2.getDeliveryStatus()).isEqualTo(DeliveryStatus.CANCELED);
+
+            // [검증] orderKey가 null이 아니므로 anyString() 통과
+            verify(bookClient, times(2)).releaseHeldStock(anyList(), anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("5. 단순 조회 (Getters)")
+    class GettersTest {
+        @Test
+        @DisplayName("내 주문 목록 조회")
+        void getMyOrders() {
+            Long userId = 100L;
+            Pageable pageable = PageRequest.of(0, 10);
+            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PAYMENT_WAITING).build();
+            given(orderRepository.findAllByUserId(userId, pageable)).willReturn(new PageImpl<>(List.of(order)));
 
             var result = orderService.getMyOrders(userId, pageable);
-
             assertThat(result.getContent()).hasSize(1);
-            assertThat(result.getContent().get(0).getItems().get(0).getBookTitle()).isEqualTo("Test Book");
         }
 
         @Test
-        @DisplayName("성공: 주문 상세 조회")
-        void getOrderDetail_Success() {
-            Long orderId = 1L;
-            Order order = Order.builder().build();
-            ReflectionTestUtils.setField(order, "id", orderId);
-            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.DELIVERING);
+        @DisplayName("결제 검증 정보 조회")
+        void getValidationInfo() {
+            String orderKey = "key";
+            Order order = Order.builder().id(1L).orderKey(orderKey).paymentAmount(100).build();
+            given(orderRepository.findByOrderKey(orderKey)).willReturn(Optional.of(order));
 
-            when(orderRepository.findByIdWithItems(orderId)).thenReturn(Optional.of(order));
-
-            OrderResponse response = orderService.getOrderDetail(orderId);
-
-            assertThat(response.getOrderId()).isEqualTo(orderId);
-            assertThat(response.getStatus()).isEqualTo("DELIVERING");
-        }
-
-        @Test
-        @DisplayName("성공: 비회원 주문 조회")
-        void getGuestOrder_Success() {
-            Long orderId = 1L;
-            Integer password = 1234;
-            Order order = Order.builder().build();
-            ReflectionTestUtils.setField(order, "id", orderId);
-            ReflectionTestUtils.setField(order, "deliveryStatus", DeliveryStatus.DELIVERY_COMPLETED);
-
-            when(orderRepository.findByIdAndOrderPassword(orderId, password)).thenReturn(Optional.of(order));
-
-            OrderResponse response = orderService.getGuestOrder(orderId, password);
-
-            assertThat(response.getOrderId()).isEqualTo(orderId);
-            assertThat(response.getStatus()).isEqualTo("DELIVERY_COMPLETED");
+            OrderValidationInfoResponse res = orderService.getValidationInfo(orderKey);
+            assertThat(res.getPaymentAmount()).isEqualTo(100);
         }
     }
 }

@@ -32,5 +32,5 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     @Query("SELECT o FROM Order o JOIN FETCH o.orderItems WHERE o.deliveryStatus = :status")
     Page<Order> findByDeliveryStatus(DeliveryStatus deliveryStatus, Pageable pageable);
 
-    List<Order> findByDeliveryStatusAndCreatedAtBefore(DeliveryStatus status, LocalDateTime time);
+    List<Order> findByDeliveryStatusAndOrderDateBefore(DeliveryStatus status, LocalDateTime time);
 }
