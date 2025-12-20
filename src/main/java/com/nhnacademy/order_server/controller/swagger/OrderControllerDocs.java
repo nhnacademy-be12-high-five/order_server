@@ -31,7 +31,7 @@ public interface OrderControllerDocs {
     })
     ResponseEntity<OrderCreateResponse> createOrder(@RequestBody OrderCreateRequest request);
 
-    @Operation(summary = "결제 완료 처리 (최종 확정)", description = "PG사 결제 성공 후 호출하여 재고와 포인트를 확정하고 주문 상태를 WAITING으로 변경합니다.")
+  /*  @Operation(summary = "결제 완료 처리 (최종 확정)", description = "PG사 결제 성공 후 호출하여 재고와 포인트를 확정하고 주문 상태를 WAITING으로 변경합니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "처리 성공"),
             @ApiResponse(responseCode = "409", description = "이미 처리된 주문"),
@@ -39,7 +39,7 @@ public interface OrderControllerDocs {
     })
     ResponseEntity<Void> paymentSuccess(
             @Parameter(description = "주문 번호") Long orderId,
-            @Parameter(description = "결제 키 (Payment Key)") String paymentKey);
+            @Parameter(description = "결제 키 (Payment Key)") String paymentKey);*/
 
     @Operation(summary = "결제 검증 데이터 조회", description = "결제 서버가 승인 요청 전, 주문 금액의 위변조 여부를 확인하기 위해 호출합니다.")
     @ApiResponses(value = {
@@ -56,7 +56,7 @@ public interface OrderControllerDocs {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "401", description = "인증되지 않은 사용자 (X-USER-ID 헤더 누락)")
     })
-    ResponseEntity<Page<OrderResponse>> getMyOrders(
+    ResponseEntity<CommonPageResponse<OrderResponse>> getMyOrders(
             @Parameter(description = "회원 식별 ID (Gateway에서 주입)", required = true) Long userId,
             @Parameter(description = "페이징 정보 (page=0, size=10, sort=id,desc 등)") Pageable pageable);
 

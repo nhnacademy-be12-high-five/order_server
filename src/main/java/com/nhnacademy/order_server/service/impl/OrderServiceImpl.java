@@ -135,7 +135,7 @@ public class OrderServiceImpl implements OrderService {
         log.info("RabbitMQ 결제 메시지 처리 완료. OrderID={}", orderId);
     }
 
-    @Override
+   /* @Override
     @Transactional
     public void paymentSuccess(Long orderId, String paymentKey) {
         log.info("결제 승인 요청 시작: orderId={}, key={}", orderId, paymentKey);
@@ -162,7 +162,7 @@ public class OrderServiceImpl implements OrderService {
             log.error("외부 리소스 확정 중 오류 발생 (롤백됨): {}", e.getMessage(), e);
             throw e;
         }
-    }
+    }*/
 
     @Override
     @Transactional
@@ -444,7 +444,7 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private void validateOrderStatus(Order order, DeliveryStatus expected) {
+    /*private void validateOrderStatus(Order order, DeliveryStatus expected) {
         if (order.getDeliveryStatus() != expected) {
             throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
         }
@@ -463,7 +463,7 @@ public class OrderServiceImpl implements OrderService {
             log.error("결제 승인 실패: orderId={}, reason={}", order.getId(), e.getMessage());
             throw new OrderException(OrderErrorCode.EXTERNAL_API_ERROR);
         }
-    }
+    }*/
 
     // [수정] orderId 파라미터 추가
     private void finalizeExternalResources(Order order) {

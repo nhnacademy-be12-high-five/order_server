@@ -15,8 +15,8 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     @Query(value = "SELECT o FROM Order o " +
             "JOIN FETCH o.delivery " +
             "LEFT JOIN FETCH o.orderReturn " +
-            "WHERE o.userId = :userId",
-            countQuery = "SELECT count(o) FROM Order o WHERE o.userId = :userId")
+            "WHERE o.userId = :userId AND o.deliveryStatus != 'PENDING'",
+            countQuery = "SELECT count(o) FROM Order o WHERE o.userId = :userId AND o.deliveryStatus != 'PENDING'")
     Page<Order> findAllByUserId(@Param("userId") Long userId, Pageable pageable);
 
     @Query("SELECT o FROM Order o JOIN FETCH o.orderItems WHERE o.id = :orderId")

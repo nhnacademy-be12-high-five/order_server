@@ -33,7 +33,7 @@ public class OrderController implements OrderControllerDocs {
         OrderCreateResponse response = orderService.createOrder(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
-
+/*
     @Override
     @PostMapping("/{orderId}/payments")
     public ResponseEntity<Void> paymentSuccess(
@@ -41,7 +41,7 @@ public class OrderController implements OrderControllerDocs {
             @RequestParam String paymentKey) {
         orderService.paymentSuccess(orderId, paymentKey);
         return ResponseEntity.ok().build();
-    }
+    }*/
 
     @Override
     @GetMapping("/{orderKey}/payments")
@@ -51,10 +51,13 @@ public class OrderController implements OrderControllerDocs {
 
     @Override
     @GetMapping
-    public ResponseEntity<Page<OrderResponse>> getMyOrders(
+    public ResponseEntity<CommonPageResponse<OrderResponse>> getMyOrders(
             @RequestHeader(value = "X-USER-ID") Long userId,
             Pageable pageable) {
-        return ResponseEntity.ok(orderService.getMyOrders(userId, pageable));
+
+        Page<OrderResponse> page = orderService.getMyOrders(userId, pageable);
+
+        return ResponseEntity.ok(new CommonPageResponse<>(page));
     }
 
     @Override
@@ -87,4 +90,6 @@ public class OrderController implements OrderControllerDocs {
         orderService.cancelOrder(orderId);
         return ResponseEntity.ok().build();
     }
+
+
 }

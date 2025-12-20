@@ -87,7 +87,7 @@ class OrderControllerTest {
                 .andDo(print());
     }
 
-    // 2. 결제 완료
+/*    // 2. 결제 완료
     @Test
     @DisplayName("[POST] 결제 완료 처리 성공 (200 OK)")
     void paymentSuccess() throws Exception {
@@ -101,7 +101,7 @@ class OrderControllerTest {
                 .andDo(print());
 
         verify(orderService).paymentSuccess(eq(orderId), eq(paymentKey));
-    }
+    }*/
 
     // 3. 결제 검증 정보 조회 (String Key 수정 반영)
     @Test
