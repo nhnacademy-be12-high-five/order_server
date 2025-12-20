@@ -60,7 +60,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             throw new OrderException(OrderErrorCode.INVALID_REQUEST);
         }
 
-        // 배송 시작(DELIVERING) 시점에만 송장 번호 필수 체크
+        // 1. 배송 중 (DELIVERING)
         if (newStatus == DeliveryStatus.DELIVERING) {
             if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {
                 throw new OrderException(OrderErrorCode.INVALID_REQUEST);
@@ -70,10 +70,19 @@ public class AdminOrderServiceImpl implements AdminOrderService {
                 order.getDelivery().startDelivery(request.getTrackingNumber());
             }
         }
-        else if (newStatus == DeliveryStatus.COMPLETED) {
+        // 2. 배송 완료 (DELIVERY_COMPLETED) [변경됨]
+        else if (newStatus == DeliveryStatus.DELIVERY_COMPLETED) {
             if (order.getDelivery() != null) {
                 order.getDelivery().completeDelivery();
             }
+        }
+        // 3. 구매 확정 (PURCHASE_CONFIRMED) [추가됨]
+        else if (newStatus == DeliveryStatus.PURCHASE_CONFIRMED) {
+            // 배송 완료 상태에서만 구매 확정 가능하도록 제약
+            if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // "배송 완료된 주문만 구매 확정할 수 있습니다."
+            }
+            // (옵션) 여기서 포인트 적립 로직을 호출하거나, OrderServiceImpl의 confirmPurchase 로직을 재사용할 수 있음
         }
 
         order.updateStatus(newStatus);
@@ -81,7 +90,6 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
     @Override
     public void processReturn(Long returnId, boolean isApproved) {
-        // OrderReturn ID는 Order ID와 동일하게 매핑됨 (@MapsId)
         OrderReturn orderReturn = orderReturnRepository.findByIdWithOrder(returnId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
 
@@ -95,14 +103,13 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     }
 
     private void approveReturn(Order order, OrderReturn orderReturn) {
-        // 1. 주문 상태 변경 (반품 완료)
-        order.updateStatus(DeliveryStatus.RETURN);
+        // 1. 주문 상태 변경 (반품 완료: RETURN -> RETURN_COMPLETED) [변경됨]
+        order.updateStatus(DeliveryStatus.RETURN_COMPLETED);
 
         // 2. 포인트 환불 처리 (결제 시 사용했던 포인트 돌려주기)
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
-                // [수정 완료] cancelPoint 호출 시 orderId 전달
-                // MemberClient의 cancelPoint 메서드 시그니처가 (userId, amount, orderId)로 수정되어 있어야 함
+                // cancelPoint 호출 (orderId 포함)
                 memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
             } catch (Exception e) {
                 log.error("포인트 환불 연동 실패: userId={}, amount={}", order.getUserId(), order.getPointDiscount());
@@ -111,19 +118,15 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
 
         // 3. 적립된 포인트 회수 (구매 확정으로 지급된 포인트 차감)
+        // 반품은 보통 구매 확정 전에 일어나지만, 확정 후 반품일 경우 포인트 회수 필요
         if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
-                // deductPoint: 지급된 포인트 회수
-                // 관리자용 단순 차감이라면 orderId가 필요 없을 수 있으나, 만약 필요하다면 추가해야 함.
-                // 현재 deductPoint는 (userId, amount)만 받는 것으로 가정
                 memberClient.deductPoint(order.getUserId(), order.getEarnedPoint());
             } catch (Exception e) {
-                // 이미 사용해서 잔액이 부족한 경우 등 실패할 수 있음.
                 log.error("적립 포인트 회수 실패: userId={}, amount={}", order.getUserId(), order.getEarnedPoint());
             }
         }
 
-        // 4. 결제 금액(PG) 환불 로직
         int refundAmount = orderReturn.getRefundAmount();
 
         if (refundAmount > 0 && order.getPaymentKey() != null) {
@@ -138,7 +141,9 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     }
 
     private void rejectReturn(Order order) {
-        // 반품 거절 시, 상태를 다시 '배송 완료' 상태로 원복하여 정상 주문으로 처리
-        order.updateStatus(DeliveryStatus.COMPLETED);
+        // 반품 거절 시: 배송 완료 상태로 원복 (COMPLETED -> DELIVERY_COMPLETED) [변경됨]
+        // 상황에 따라 구매 확정(PURCHASE_CONFIRMED)으로 돌려야 할 수도 있음 (정책 결정 필요)
+
+        order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
     }
 }
