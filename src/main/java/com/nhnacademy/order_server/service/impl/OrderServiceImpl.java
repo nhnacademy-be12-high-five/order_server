@@ -715,4 +715,15 @@ public class OrderServiceImpl implements OrderService {
         return orderRepository.findByUserIdAndOrderDateAfter(userId, threeMonthsAgo, pageable)
                 .map(OrderResponse::from);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasPurchasedBook(Long memberId, Long bookId) {
+        return orderRepository.existsByUserIdAndOrderItems_BookIdAndDeliveryStatus(
+                memberId,
+                bookId,
+                DeliveryStatus.PURCHASE_CONFIRMED
+        );
+    }
+
 }

@@ -49,4 +49,6 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
             @Param("startDate") LocalDateTime startDate,
             Pageable pageable
     );
+
+    boolean existsByUserIdAndOrderItems_BookIdAndDeliveryStatus(Long userId, Long bookId, DeliveryStatus deliveryStatus);
 }
