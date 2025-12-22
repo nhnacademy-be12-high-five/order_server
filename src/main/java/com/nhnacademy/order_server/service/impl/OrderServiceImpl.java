@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -66,7 +67,6 @@ public class OrderServiceImpl implements OrderService {
     private OrderService self;
 
     @Override
-    @Transactional
     public OrderCreateResponse createOrder(OrderCreateRequest request) {
 
         Long userId = request.getUserId();
@@ -211,6 +211,11 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void cancelOrder(Long orderId) {
+        self.cancelOrderTransactional(orderId);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void cancelOrderTransactional(Long orderId) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
@@ -224,8 +229,9 @@ public class OrderServiceImpl implements OrderService {
             processPaymentWaitingOrderCancellation(order);
         }
 
-        order.updateStatus(DeliveryStatus.CANCELED);
+        order.updateStatus(DeliveryStatus.CANCELED);  // 트랜잭션 안에서 flush 발생
     }
+
 
     @Override
     public void cancelExpiredOrders() {
