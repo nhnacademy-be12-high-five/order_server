@@ -578,6 +578,14 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable) {
+        LocalDateTime threeMonthsAgo = LocalDateTime.now().minusMonths(3);
+
+        return orderRepository.findByUserIdAndOrderDateAfter(userId, threeMonthsAgo, pageable)
+                .map(OrderResponse::from);
+    }
+
+    @Override
     public Page<OrderResponse> getMyOrders(Long userId, Pageable pageable) {
         return orderRepository.findAllByUserId(userId, pageable).map(OrderResponse::from);
     }

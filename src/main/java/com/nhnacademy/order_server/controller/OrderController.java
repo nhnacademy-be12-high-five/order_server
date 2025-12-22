@@ -58,6 +58,16 @@ public class OrderController implements OrderControllerDocs {
     }
 
     @Override
+    @GetMapping("/recent")
+    public ResponseEntity<CommonPageResponse<OrderResponse>> getRecentOrders(
+            @RequestHeader("X-USER-ID") Long userId,
+            Pageable pageable
+    ) {
+        Page<OrderResponse> page = orderService.getMyOrdersLast3Months(userId, pageable);
+        return ResponseEntity.ok(new CommonPageResponse<>(page));
+    }
+
+    @Override
     @PostMapping("/guests/search")
     public ResponseEntity<OrderResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request) {
         return ResponseEntity.ok(orderService.getGuestOrder(request.getOrderId(), request.getPassword()));

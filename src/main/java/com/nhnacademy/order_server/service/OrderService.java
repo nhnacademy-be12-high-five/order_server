@@ -21,5 +21,6 @@ public interface OrderService {
     void cancelOrder(Long orderId);
     void processPaymentSuccessMessage(PaymentSuccessMessage message);
     void cancelExpiredOrders();
+    Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable);
 
 }

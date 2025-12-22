@@ -33,4 +33,21 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     Page<Order> findByDeliveryStatus(DeliveryStatus deliveryStatus, Pageable pageable);
 
     List<Order> findByDeliveryStatusAndOrderDateBefore(DeliveryStatus status, LocalDateTime time);
+
+
+    @Query(value = "SELECT o FROM Order o " +
+            "JOIN FETCH o.delivery " +
+            "LEFT JOIN FETCH o.orderReturn " +
+            "WHERE o.userId = :userId " +
+            "AND o.orderDate >= :startDate " +
+            "AND o.deliveryStatus = 'PURCHASE_CONFIRMED'",
+            countQuery = "SELECT count(o) FROM Order o " +
+                    "WHERE o.userId = :userId " +
+                    "AND o.orderDate >= :startDate " +
+                    "AND o.deliveryStatus = 'PURCHASE_CONFIRMED'")
+    Page<Order> findByUserIdAndOrderDateAfter(
+            @Param("userId") Long userId,
+            @Param("startDate") LocalDateTime startDate,
+            Pageable pageable
+    );
 }
