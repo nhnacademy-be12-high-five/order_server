@@ -698,4 +698,12 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
         return OrderValidationInfoResponse.from(order);
     }
+  
+    @Override
+    public Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable) {
+        LocalDateTime threeMonthsAgo = LocalDateTime.now().minusMonths(3);
+
+        return orderRepository.findByUserIdAndOrderDateAfter(userId, threeMonthsAgo, pageable)
+                .map(OrderResponse::from);
+    }
 }

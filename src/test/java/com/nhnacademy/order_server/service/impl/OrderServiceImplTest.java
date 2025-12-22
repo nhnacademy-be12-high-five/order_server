@@ -396,4 +396,24 @@ class OrderServiceImplTest {
             assertThat(res.getPaymentAmount()).isEqualTo(100);
         }
     }
+
+    @Nested
+    @DisplayName("6. 기간별 주문 조회")
+    class GetPeriodOrdersTest {
+        @Test
+        @DisplayName("최근 3개월 주문 조회 성공")
+        void getMyOrdersLast3Months() {
+            Long userId = 100L;
+            Pageable pageable = PageRequest.of(0, 10);
+            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED).build();
+
+            given(orderRepository.findByUserIdAndOrderDateAfter(eq(userId), any(LocalDateTime.class), eq(pageable)))
+                    .willReturn(new PageImpl<>(List.of(order)));
+
+            var result = orderService.getMyOrdersLast3Months(userId, pageable);
+
+            assertThat(result.getContent()).hasSize(1);
+            verify(orderRepository).findByUserIdAndOrderDateAfter(eq(userId), any(LocalDateTime.class), eq(pageable));
+        }
+    }
 }
