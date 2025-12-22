@@ -713,10 +713,9 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public boolean hasPurchasedBook(Long memberId, Long bookId) {
-        return orderRepository.existsByUserIdAndOrderItems_BookIdAndDeliveryStatus(
+        return orderRepository.hasPurchasedBook(
                 memberId,
-                bookId,
-                DeliveryStatus.PURCHASE_CONFIRMED
+                bookId
         );
     }
 

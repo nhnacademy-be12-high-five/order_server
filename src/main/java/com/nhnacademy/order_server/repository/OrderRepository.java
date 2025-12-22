@@ -50,5 +50,12 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
             Pageable pageable
     );
 
-    boolean existsByUserIdAndOrderItems_BookIdAndDeliveryStatus(Long userId, Long bookId, DeliveryStatus deliveryStatus);
+
+    @Query("SELECT CASE WHEN COUNT(oi) > 0 THEN true ELSE false END " +
+            "FROM Order o JOIN o.orderItems oi " +
+            "WHERE o.userId = :userId AND oi.bookId = :bookId " +
+            "AND o.deliveryStatus = 'PURCHASE_CONFIRMED'")
+    boolean hasPurchasedBook(@Param("userId") Long userId,
+                             @Param("bookId") Long bookId);
+
 }
