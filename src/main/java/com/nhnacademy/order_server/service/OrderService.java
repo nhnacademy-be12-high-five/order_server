@@ -30,4 +30,6 @@ public interface OrderService {
     );
 
     void cancelOrderTransactional(Long orderId);
+    void purchaseConfirm(Long orderId);
+
 }

@@ -1,9 +1,19 @@
 package com.nhnacademy.order_server.service.impl;
 
-import com.nhnacademy.order_server.adapter.*;
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CartClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
+import com.nhnacademy.order_server.adapter.MemberClient;
+import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
-import com.nhnacademy.order_server.dto.request.*;
+import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
+import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
+import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
@@ -22,8 +32,22 @@ import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
@@ -33,12 +57,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -59,6 +77,8 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentClient paymentClient;
 
     private final PasswordEncoder passwordEncoder;
+
+    private final RabbitTemplate rabbitTemplate;
 
     private static final int DEFAULT_DELIVERY_DAYS = 2;
 
@@ -260,6 +280,46 @@ public class OrderServiceImpl implements OrderService {
             }
         }
     }
+
+    @Override
+    @Transactional
+    public void purchaseConfirm(Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        // 이미 구매확정이거나 취소/반품 완료 상태면 예외 처리
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
+            throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
+        }
+        if (order.getDeliveryStatus() == DeliveryStatus.CANCELED ||
+                order.getDeliveryStatus() == DeliveryStatus.RETURN_COMPLETED) {
+            throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
+        }
+
+        // 구매 확정 처리
+        order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
+
+        // RabbitMQ 메시지 발행 (point-queue)
+        if (order.getUserId() != null && order.getPaymentAmount() != null) {
+            PointEarnRequest pointRequest = PointEarnRequest.builder()
+                    .memberId(order.getUserId())
+                    .eventType("EARN_ORDER")
+                    .pureAmount(order.getPaymentAmount())
+                    .orderId(order.getId())
+                    .build();
+
+            try {
+                rabbitTemplate.convertAndSend("point-queue", pointRequest);
+                log.info("포인트 적립 메시지 발행 완료: OrderID={}", orderId);
+            } catch (Exception e) {
+                log.error("포인트 적립 메시지 발행 실패: OrderID={}, Error={}", orderId, e.getMessage());
+            }
+        }
+
+        log.info("구매 확정 완료: OrderID={}", orderId);
+
+    }
+
 
     // --- Private Methods ---
 
