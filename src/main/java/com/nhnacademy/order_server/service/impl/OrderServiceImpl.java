@@ -280,24 +280,33 @@ public class OrderServiceImpl implements OrderService {
             }
         }
     }
-
     @Override
     @Transactional
     public void purchaseConfirm(Long orderId) {
+        log.info("purchaseConfirm 호출: orderId={}", orderId);
+
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+                .orElseThrow(() -> {
+                    log.warn("주문을 찾을 수 없습니다: orderId={}", orderId);
+                    return new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
+                });
+
+        log.info("주문 상태 확인: orderId={}, currentStatus={}", orderId, order.getDeliveryStatus());
 
         // 이미 구매확정이거나 취소/반품 완료 상태면 예외 처리
         if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
+            log.warn("이미 구매확정된 주문입니다: orderId={}", orderId);
             throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
         }
         if (order.getDeliveryStatus() == DeliveryStatus.CANCELED ||
                 order.getDeliveryStatus() == DeliveryStatus.RETURN_COMPLETED) {
+            log.warn("취소 또는 반품 완료된 주문입니다: orderId={}, status={}", orderId, order.getDeliveryStatus());
             throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
         }
 
         // 구매 확정 처리
         order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
+        log.info("주문 상태 업데이트 완료: orderId={}, newStatus={}", orderId, order.getDeliveryStatus());
 
         // RabbitMQ 메시지 발행 (point-queue)
         if (order.getUserId() != null && order.getPaymentAmount() != null) {
@@ -310,15 +319,15 @@ public class OrderServiceImpl implements OrderService {
 
             try {
                 rabbitTemplate.convertAndSend("point-queue", pointRequest);
-                log.info("포인트 적립 메시지 발행 완료: OrderID={}", orderId);
+                log.info("포인트 적립 메시지 발행 완료: orderId={}", orderId);
             } catch (Exception e) {
-                log.error("포인트 적립 메시지 발행 실패: OrderID={}, Error={}", orderId, e.getMessage());
+                log.error("포인트 적립 메시지 발행 실패: orderId={}, Error={}", orderId, e.getMessage(), e);
             }
         }
 
-        log.info("구매 확정 완료: OrderID={}", orderId);
-
+        log.info("구매 확정 완료: orderId={}", orderId);
     }
+
 
 
     // --- Private Methods ---

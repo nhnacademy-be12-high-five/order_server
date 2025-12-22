@@ -5,12 +5,11 @@ import com.nhnacademy.order_server.dto.request.DeliveryPolicyRequest;
 import com.nhnacademy.order_server.dto.response.DeliveryPolicyResponse;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor

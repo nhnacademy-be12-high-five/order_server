@@ -1,10 +1,12 @@
 package com.nhnacademy.order_server.adapter;
 
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
-
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(name = "TEAM5-MEMBER-SERVER", contextId = "memberClient")
 public interface MemberClient {
