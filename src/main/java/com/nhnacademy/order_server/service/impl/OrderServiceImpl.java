@@ -1,6 +1,7 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.*;
+import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.*;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
@@ -21,7 +22,6 @@ import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
-import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -117,7 +117,6 @@ public class OrderServiceImpl implements OrderService {
                     userId,
                     usedPoint,
                     orderKey,
-                    earnRate,
                     orderData,
                     calculationResult
             );
@@ -140,7 +139,6 @@ public class OrderServiceImpl implements OrderService {
             Long userId,
             int usedPoint,
             String orderKey,
-            double earnRate,
             OrderCalculationData orderData,
             OrderCreateRequest.OrderCalculationResult calculationResult
     ) {
@@ -363,8 +361,7 @@ public class OrderServiceImpl implements OrderService {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         if (wrapperIds.isEmpty()) {
-            return wrapperRepository.findAll().stream()
-                    .collect(Collectors.toMap(Wrapper::getId, Function.identity()));
+            return Collections.emptyMap();
         }
         return wrapperRepository.findAllById(wrapperIds).stream()
                 .collect(Collectors.toMap(Wrapper::getId, Function.identity()));
@@ -635,13 +632,4 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
         return OrderValidationInfoResponse.from(order);
     }
-
-    @Builder
-    public record OrderCalculationData(
-            List<OrderItem> tempOrderItems,
-            int totalProductAmount,
-            int totalWrappingFee,
-            int totalEarnedPoint,
-            String firstBookTitle
-    ) {}
 }
