@@ -28,4 +28,6 @@ public interface OrderService {
             OrderCalculationData orderData,
             OrderCreateRequest.OrderCalculationResult calculationResult
     );
+
+    void cancelOrderTransactional(Long orderId);
 }
