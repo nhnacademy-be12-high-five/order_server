@@ -11,7 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface OrderService {
-
+    
     OrderValidationInfoResponse getValidationInfo(String orderKey);
     OrderCreateResponse createOrder(OrderCreateRequest request);
     Page<OrderResponse> getMyOrders(Long userId, Pageable pageable);
@@ -20,6 +20,7 @@ public interface OrderService {
     void cancelOrder(Long orderId);
     void processPaymentSuccessMessage(PaymentSuccessMessage message);
     void cancelExpiredOrders();
+    Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable);
     OrderCreateResponse createOrderTransactional(
             OrderCreateRequest request,
             Long userId,
