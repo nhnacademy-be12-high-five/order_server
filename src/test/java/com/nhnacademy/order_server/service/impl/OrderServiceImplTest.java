@@ -1,6 +1,24 @@
 package com.nhnacademy.order_server.service.impl;
 
-import com.nhnacademy.order_server.adapter.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CartClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
+import com.nhnacademy.order_server.adapter.MemberClient;
+import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
@@ -8,7 +26,6 @@ import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemReque
 import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
-import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
@@ -22,6 +39,10 @@ import com.nhnacademy.order_server.repository.DeliveryRepository;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,19 +57,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderServiceImplTest {

@@ -1,8 +1,8 @@
 package com.nhnacademy.order_server.adapter;
 
 import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
-import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
 import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;

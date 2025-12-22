@@ -1,8 +1,8 @@
 package com.nhnacademy.order_server.dto.response;
 
+import java.util.List;
 import lombok.Getter;
 import org.springframework.data.domain.Page;
-import java.util.List;
 
 @Getter
 public class CommonPageResponse<T> {

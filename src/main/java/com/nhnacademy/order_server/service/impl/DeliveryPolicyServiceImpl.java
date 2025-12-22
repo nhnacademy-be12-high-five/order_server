@@ -7,14 +7,13 @@ import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryPolicyRepository;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict; // [추가] 캐시 갱신을 위해 필요
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor

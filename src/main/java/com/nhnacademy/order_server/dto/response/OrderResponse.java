@@ -3,13 +3,11 @@ package com.nhnacademy.order_server.dto.response;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Builder;
-import lombok.Getter;
-
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
+import lombok.Builder;
+import lombok.Getter;
 
 @Getter
 @Builder

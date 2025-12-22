@@ -1,5 +1,17 @@
 package com.nhnacademy.order_server.service.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
 import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
@@ -14,6 +26,8 @@ import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
+import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,17 +40,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.List;
-import java.util.Optional;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOrderServiceImplTest {
