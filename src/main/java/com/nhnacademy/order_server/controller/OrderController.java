@@ -101,5 +101,10 @@ public class OrderController implements OrderControllerDocs {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("{orderId}/confirm")
+    public ResponseEntity<Void> confirmOrder(@PathVariable Long orderId) {
+        orderService.purchaseConfirm(orderId);
+        return ResponseEntity.ok().build();
+    }
 
 }
