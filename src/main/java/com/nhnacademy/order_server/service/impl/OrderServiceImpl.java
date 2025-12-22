@@ -98,38 +98,32 @@ public class OrderServiceImpl implements OrderService {
         OrderCreateRequest.OrderCalculationResult calculationResult;
         List<Long> heldStockBookIds;
 
-        try {
-            // 회원 적립률 조회 (실패해도 OK)
-            if (userId != null) {
-                try {
-                    MemberGradeResponse grade = memberClient.getMemberGrade(userId);
-                    earnRate = grade.getEarnRate();
-                } catch (Exception e) {
-                    log.warn("회원 등급 조회 실패, 적립률 0 처리. userId={}", userId);
-                }
+        // 회원 적립률 조회 (실패해도 OK)
+        if (userId != null) {
+            try {
+                MemberGradeResponse grade = memberClient.getMemberGrade(userId);
+                earnRate = grade.getEarnRate();
+            } catch (Exception e) {
+                log.warn("회원 등급 조회 실패, 적립률 0 처리. userId={}", userId);
             }
-
-            // 재고 선점 + 주문 아이템 계산
-            orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
-
-            int deliveryFee = calculateDeliveryFee(
-                    orderData.totalProductAmount(),
-                    request.getReceiverAddress()
-            );
-
-            calculationResult = calculateFinalAmounts(
-                    request, orderData, deliveryFee
-            );
-
-            heldStockBookIds = orderData.tempOrderItems().stream()
-                    .map(OrderItem::getBookId)
-                    .distinct()
-                    .toList();
-
-        } catch (Exception e) {
-            // 이 단계에서 실패하면 DB 건드린 게 없으므로 그대로 던짐
-            throw e;
         }
+
+        // 재고 선점 + 주문 아이템 계산
+        orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
+
+        int deliveryFee = calculateDeliveryFee(
+                orderData.totalProductAmount(),
+                request.getReceiverAddress()
+        );
+
+        calculationResult = calculateFinalAmounts(
+                request, orderData, deliveryFee
+        );
+
+        heldStockBookIds = orderData.tempOrderItems().stream()
+                .map(OrderItem::getBookId)
+                .distinct()
+                .toList();
 
         try {
             return self.createOrderTransactional(
