@@ -1,9 +1,9 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.MemberClient;
-import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderReturn;
@@ -29,7 +29,6 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final OrderRepository orderRepository;
     private final OrderReturnRepository orderReturnRepository;
     private final MemberClient memberClient;
-    private final PaymentClient paymentClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -103,41 +102,54 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     }
 
     private void approveReturn(Order order, OrderReturn orderReturn) {
-        // 1. 주문 상태 변경 (반품 완료: RETURN -> RETURN_COMPLETED) [변경됨]
-        order.updateStatus(DeliveryStatus.RETURN_COMPLETED);
+        // 1. 결제 금액(현금/카드)을 포인트로 환불 (PG 취소 X -> 포인트 적립 O)
+        int refundAmount = orderReturn.getRefundAmount(); // 반품비 제외된 최종 환불액
 
-        // 2. 포인트 환불 처리 (결제 시 사용했던 포인트 돌려주기)
-        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+        if (refundAmount > 0) {
             try {
-                // cancelPoint 호출 (orderId 포함)
-                memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
+                PointEarnRequest earnRequest = PointEarnRequest.builder()
+                        .memberId(order.getUserId())
+                        .eventType("EARN_REFUND")
+                        .pureAmount(refundAmount)
+                        .orderId(order.getId())
+                        .build();
+
+                memberClient.earnPoint(earnRequest);
+
+                log.info("반품 환불금 포인트 적립 완료: userId={}, amount={}", order.getUserId(), refundAmount);
+
             } catch (Exception e) {
-                log.error("포인트 환불 연동 실패: userId={}, amount={}", order.getUserId(), order.getPointDiscount());
+                log.error("반품 포인트 적립 실패: userId={}, amount={}", order.getUserId(), refundAmount);
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
             }
         }
 
-        // 3. 적립된 포인트 회수 (구매 확정으로 지급된 포인트 차감)
-        // 반품은 보통 구매 확정 전에 일어나지만, 확정 후 반품일 경우 포인트 회수 필요
+        // 2. 사용했던 포인트 복구 (주문 시 포인트를 썼다면)
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+            try {
+                PointTransactionRequest revertRequest = new PointTransactionRequest(
+                        order.getUserId(),
+                        (long) order.getPointDiscount(),
+                        order.getId()
+                );
+                memberClient.revertPoint(revertRequest);
+            } catch (Exception e) {
+                log.error("사용 포인트 복구 실패: userId={}", order.getUserId());
+                throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
+            }
+        }
+
+        // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
         if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
                 memberClient.deductPoint(order.getUserId(), order.getEarnedPoint());
             } catch (Exception e) {
-                log.error("적립 포인트 회수 실패: userId={}, amount={}", order.getUserId(), order.getEarnedPoint());
+                log.error("적립 포인트 회수 실패: userId={}", order.getUserId());
             }
         }
 
-        int refundAmount = orderReturn.getRefundAmount();
-
-        if (refundAmount > 0 && order.getPaymentKey() != null) {
-            try {
-                PaymentCancelRequest cancelRequest = new PaymentCancelRequest("관리자 반품 승인", refundAmount);
-                paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
-            } catch (Exception e) {
-                log.error("PG 결제 취소 연동 실패: paymentKey={}, amount={}, error={}", order.getPaymentKey(), refundAmount, e.getMessage());
-                throw new OrderException(OrderErrorCode.EXTERNAL_API_ERROR);
-            }
-        }
+        // 4. 상태 변경
+        order.updateStatus(DeliveryStatus.RETURN_COMPLETED);
     }
 
     private void rejectReturn(Order order) {

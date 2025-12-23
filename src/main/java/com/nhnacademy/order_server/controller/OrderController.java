@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -107,4 +108,10 @@ public class OrderController implements OrderControllerDocs {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("/check-purchase")
+    public ResponseEntity<Boolean> hasPurchasedBook(@RequestParam("memberId") Long memberId,
+                                                    @RequestParam("bookId") Long bookId) {
+        Boolean result = orderService.hasPurchasedBook(memberId, bookId);
+        return ResponseEntity.ok(result);
+    }
 }
