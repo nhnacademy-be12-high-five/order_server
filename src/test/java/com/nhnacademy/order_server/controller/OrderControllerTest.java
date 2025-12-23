@@ -174,7 +174,7 @@ class OrderControllerTest {
                 .status(DeliveryStatus.DELIVERY_COMPLETED.name())
                 .build();
 
-        given(orderService.getGuestOrder(eq(1L), eq(1234))).willReturn(response);
+        given(orderService.getGuestOrder(eq(1L), eq("1234"))).willReturn(response);
 
         mockMvc.perform(post("/api/orders/guests/search")
                         .contentType(MediaType.APPLICATION_JSON)

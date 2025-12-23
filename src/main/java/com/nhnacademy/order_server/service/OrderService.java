@@ -16,7 +16,7 @@ public interface OrderService {
     OrderCreateResponse createOrder(OrderCreateRequest request);
     Page<OrderResponse> getMyOrders(Long userId, Pageable pageable);
     OrderResponse getOrderDetail(Long orderId);
-    OrderResponse getGuestOrder(Long orderId, Integer password);
+    OrderResponse getGuestOrder(Long orderId, String password);
     void cancelOrder(Long orderId);
     void processPaymentSuccessMessage(PaymentSuccessMessage message);
     void cancelExpiredOrders();

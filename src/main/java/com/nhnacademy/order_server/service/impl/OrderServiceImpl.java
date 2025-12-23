@@ -688,9 +688,14 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public OrderResponse getGuestOrder(Long orderId, Integer password) {
-        Order order = orderRepository.findByIdAndOrderPassword(orderId, password)
+    public OrderResponse getGuestOrder(Long orderId, String password) {
+        Order order = orderRepository.findByIdWithItems(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        if (!passwordEncoder.matches(password, order.getOrderPassword())) {
+            throw new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+
         return OrderResponse.from(order);
     }
 
