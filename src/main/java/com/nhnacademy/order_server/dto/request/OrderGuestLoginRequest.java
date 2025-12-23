@@ -16,5 +16,5 @@ public class OrderGuestLoginRequest {
 
     @NotNull
     @Schema(description = "주문 비밀번호", example = "1234")
-    private Integer password;
+    private String password;
 }
