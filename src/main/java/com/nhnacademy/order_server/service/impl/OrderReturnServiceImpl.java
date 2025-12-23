@@ -38,9 +38,6 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
             return OrderReturnCheckResponse.ofIneligible("이미 구매 확정된 주문은 반품할 수 없습니다.");
         }
-        if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
-            return OrderReturnCheckResponse.ofIneligible("배송 완료 상태의 주문만 반품 신청이 가능합니다.");
-        }
 
         // 2. 중복 신청 검증
         if (order.getOrderReturn() != null) {
@@ -63,10 +60,6 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         if (returnReason == ReturnReason.SIMPLE_CHANGE) {
             allowedDays = 10;
             estimatedFee = RETURN_SHIPPING_FEE;
-        } else if (returnReason != null) {
-            // 귀책 사유 등: 30일 이내, 무료
-            allowedDays = 30;
-            estimatedFee = 0;
         }
 
         if (daysPassed > allowedDays) {
@@ -90,11 +83,11 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
             throw new OrderException(OrderErrorCode.ALREADY_PURCHASE_CONFIRMED); // 구매확정된 건 반품 불가
         }
-        // [변경] COMPLETED -> DELIVERY_COMPLETED
-        if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
+
+        if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED
+                && order.getDeliveryStatus() != DeliveryStatus.DELIVERING) {
             throw new OrderException(OrderErrorCode.RETURN_NOT_ELIGIBLE);
         }
-
         if (order.getOrderReturn() != null) {
             throw new OrderException(OrderErrorCode.ALREADY_RETURN_REQUESTED);
         }
