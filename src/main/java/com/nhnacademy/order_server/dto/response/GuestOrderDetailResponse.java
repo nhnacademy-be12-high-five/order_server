@@ -58,7 +58,7 @@ public class GuestOrderDetailResponse {
                 .addressDetail("")
                 .deliveryRequest("")
 
-                .totalAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getPaymentAmount()) : 0L)
+                .totalAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getProductAmount()) : 0L)
                 .deliveryFee(deliveryCost)
                 .couponDiscount(order.getCouponDiscount() != null ? Long.valueOf(order.getCouponDiscount()) : 0L)
                 .pointDiscount(order.getPointDiscount() != null ? Long.valueOf(order.getPointDiscount()) : 0L)
