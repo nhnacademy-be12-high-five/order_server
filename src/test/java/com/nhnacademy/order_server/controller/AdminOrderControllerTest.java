@@ -18,6 +18,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc; // [1] Import 추가
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -29,6 +30,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AdminOrderController.class)
+@AutoConfigureMockMvc(addFilters = false) // [2] 시큐리티 필터 비활성화 (401/403 에러 방지)
 @TestPropertySource(properties = {
         "book.service.url=http://localhost:8081",
         "coupon.service.url=http://localhost:8082",
@@ -51,9 +53,11 @@ class AdminOrderControllerTest {
     @DisplayName("GET /api/admin/orders - 관리자 주문 목록 조회")
     void getOrders() throws Exception {
         // given
+        // [3] orderId -> id 로 변경
         Page<OrderResponse> responsePage = new PageImpl<>(List.of(
-                OrderResponse.builder().orderId(1L).status("PENDING").build()
+                OrderResponse.builder().id(1L).status("PENDING").build()
         ));
+
         given(adminOrderService.getOrders(any(Pageable.class), anyString()))
                 .willReturn(responsePage);
 
@@ -64,7 +68,8 @@ class AdminOrderControllerTest {
                         .param("status", "PENDING")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].orderId").value(1L))
+                // [4] JSON 경로 수정: $.content[0].orderId -> $.content[0].id
+                .andExpect(jsonPath("$.content[0].id").value(1L))
                 .andExpect(jsonPath("$.content[0].status").value("PENDING"));
     }
 
