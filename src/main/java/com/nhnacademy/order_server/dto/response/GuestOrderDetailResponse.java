@@ -27,6 +27,7 @@ public class GuestOrderDetailResponse {
     private String address;
     private String addressDetail;
     private String deliveryRequest;
+    private Long wrappingFee;
 
     private Long totalAmount;
     private Long deliveryFee;
@@ -37,6 +38,10 @@ public class GuestOrderDetailResponse {
     private List<GuestOrderItemResponse> orderItems;
 
     public static GuestOrderDetailResponse from(Order order) {
+        long calculatedWrappingFee = order.getOrderItems().stream()
+                .filter(item -> item.getWrapper() != null) // 포장지 있는 것만 필터링
+                .mapToLong(item -> (long) item.getWrapper().getWrapperPrice() * item.getQuantity()) // 가격 * 수량
+                .sum();
 
         List<GuestOrderItemResponse> itemResponses = order.getOrderItems().stream()
                 .map(GuestOrderItemResponse::from)
@@ -60,6 +65,7 @@ public class GuestOrderDetailResponse {
 
                 .totalAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getProductAmount()) : 0L)
                 .deliveryFee(deliveryCost)
+                .wrappingFee(calculatedWrappingFee)
                 .couponDiscount(order.getCouponDiscount() != null ? Long.valueOf(order.getCouponDiscount()) : 0L)
                 .pointDiscount(order.getPointDiscount() != null ? Long.valueOf(order.getPointDiscount()) : 0L)
                 .paymentAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getPaymentAmount()) : 0L)
