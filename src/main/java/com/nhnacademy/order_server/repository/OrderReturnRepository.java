@@ -10,4 +10,6 @@ public interface OrderReturnRepository extends JpaRepository<OrderReturn, Long> 
 
     @Query("SELECT r FROM OrderReturn r JOIN FETCH r.order WHERE r.id = :id")
     Optional<OrderReturn> findByIdWithOrder(@Param("id") Long id);
+
+    Optional<OrderReturn> findByOrderId(Long orderId);
 }

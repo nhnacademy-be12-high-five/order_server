@@ -247,6 +247,45 @@ public class OrderServiceImpl implements OrderService {
         order.updateStatus(DeliveryStatus.CANCELED);  // 트랜잭션 안에서 flush 발생
     }
 
+    @Override
+    @Transactional
+    public void autoCompleteDelivery() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
+
+        List<Order> deliveringOrders = orderRepository.findByDeliveryStatusAndDelivery_ActualShipDateBefore(
+                DeliveryStatus.DELIVERING, threshold
+        );
+
+        for (Order order : deliveringOrders) {
+            order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+
+            if (order.getDelivery() != null) {
+                order.getDelivery().completeDelivery();
+            }
+            log.info("자동 배송 완료 처리: OrderID={}", order.getId());
+        }
+    }
+
+    // [수정] 배송 완료 -> 구매 확정 (기준: 배송 완료 후 10일 경과)
+    @Override
+    @Transactional
+    public void autoConfirmPurchase() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(10); // 10일 지남
+
+        List<Order> completedOrders = orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(
+                DeliveryStatus.DELIVERY_COMPLETED, threshold
+        );
+
+        for (Order order : completedOrders) {
+            try {
+                // 기존 구매 확정 로직 재사용 (포인트 적립 등 포함)
+                this.purchaseConfirm(order.getId());
+                log.info("자동 구매 확정 처리: OrderID={}", order.getId());
+            } catch (Exception e) {
+                log.error("자동 구매 확정 실패: orderId={}, Error={}", order.getId(), e.getMessage());
+            }
+        }
+    }
 
     @Override
     public void cancelExpiredOrders() {

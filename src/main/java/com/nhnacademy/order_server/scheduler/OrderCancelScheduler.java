@@ -20,4 +20,12 @@ public class OrderCancelScheduler {
         orderService.cancelExpiredOrders();
         log.info("[Scheduler] 결제 대기 만료 주문 정리 종료");
     }
+
+    @Scheduled(cron = "0 0 3 * * *")
+    public void runDailyOrderStatusUpdate() {
+        log.info("[Scheduler] 자동 상태 변경 작업 시작");
+        orderService.autoCompleteDelivery(); // 배송중 -> 배송완료
+        orderService.autoConfirmPurchase();  // 배송완료 -> 구매확정
+        log.info("[Scheduler] 자동 상태 변경 작업 종료");
+    }
 }

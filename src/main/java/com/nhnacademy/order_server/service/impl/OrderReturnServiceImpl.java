@@ -33,23 +33,17 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     public OrderReturnCheckResponse checkReturnEligibility(Long orderId, ReturnReason returnReason) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        // 1. 상태 검증: 배송 완료 상태여야 함
-        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
-            return OrderReturnCheckResponse.ofIneligible("이미 구매 확정된 주문은 반품할 수 없습니다.");
-        }
-
-        // 2. 중복 신청 검증
+        // 중복 신청 검증
         if (order.getOrderReturn() != null) {
             return OrderReturnCheckResponse.ofIneligible("이미 반품 접수된 주문입니다.");
         }
 
-        // 3. 배송 정보 검증
+        // 배송 정보 검증
         if (order.getDelivery() == null || order.getDelivery().getActualShipDate() == null) {
             return OrderReturnCheckResponse.ofIneligible("배송 정보를 확인할 수 없습니다.");
         }
 
-        // 4. 기간 검증
+        // 기간 검증
         LocalDateTime shipmentDate = order.getDelivery().getActualShipDate();
         long daysPassed = ChronoUnit.DAYS.between(shipmentDate, LocalDateTime.now());
 
@@ -79,13 +73,9 @@ public class OrderReturnServiceImpl implements OrderReturnService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        // [변경] 구매 확정 상태 체크 추가
-        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
-            throw new OrderException(OrderErrorCode.ALREADY_PURCHASE_CONFIRMED); // 구매확정된 건 반품 불가
-        }
-
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED
-                && order.getDeliveryStatus() != DeliveryStatus.DELIVERING) {
+                && order.getDeliveryStatus() != DeliveryStatus.DELIVERING
+                && order.getDeliveryStatus() != DeliveryStatus.PURCHASE_CONFIRMED) {
             throw new OrderException(OrderErrorCode.RETURN_NOT_ELIGIBLE);
         }
         if (order.getOrderReturn() != null) {
