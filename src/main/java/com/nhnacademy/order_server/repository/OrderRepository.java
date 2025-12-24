@@ -59,4 +59,11 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
     boolean hasPurchasedBook(@Param("userId") Long userId,
                              @Param("bookId") Long bookId);
 
+    //  배송 중 상태이면서 + '배송 시작일이 특정 날짜 이전인 주문 조회
+    List<Order> findByDeliveryStatusAndDelivery_ActualShipDateBefore(DeliveryStatus status, LocalDateTime time);
+
+    //  배송 완료 상태이면서 + '배송 완료일이 특정 날짜 이전인 주문 조회
+    List<Order> findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(DeliveryStatus status, LocalDateTime time);
+}
+
 }
