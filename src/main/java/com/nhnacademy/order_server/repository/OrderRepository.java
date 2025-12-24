@@ -64,6 +64,5 @@ public interface OrderRepository extends JpaRepository<Order,Long> {
 
     //  배송 완료 상태이면서 + '배송 완료일이 특정 날짜 이전인 주문 조회
     List<Order> findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(DeliveryStatus status, LocalDateTime time);
-}
 
 }
