@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
+import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -174,29 +175,34 @@ class OrderControllerTest {
                 .andDo(print());
     }
 
-    // 6. 비회원 주문 조회 테스트 (OrderResponse 사용)
+    // 6. 비회원 주문 조회 테스트 (GuestOrderDetailResponse 사용)
     @Test
     @DisplayName("[POST] 비회원 주문 조회 (200 OK)")
     void getGuestOrder() throws Exception {
+        // Given
         OrderGuestLoginRequest request = new OrderGuestLoginRequest();
         ReflectionTestUtils.setField(request, "orderId", 1L);
-        ReflectionTestUtils.setField(request, "password", 1234);
+        ReflectionTestUtils.setField(request, "password", "1234"); // [수정] Integer(1234) -> String("1234")
 
-        // [수정] orderId -> id
-        OrderResponse response = OrderResponse.builder()
-                .id(1L)
-                .status(DeliveryStatus.DELIVERY_COMPLETED.name())
+
+        GuestOrderDetailResponse response = GuestOrderDetailResponse.builder()
+                .orderId(1L)
+                .orderNumber("20241225-0001")
+                .statusName(DeliveryStatus.DELIVERY_COMPLETED.name()) // statusName 필드 사용
+                .receiverName("홍길동")
+                .totalAmount(10000L)
                 .build();
 
+        // Mocking
         given(orderService.getGuestOrder(eq(1L), eq("1234"))).willReturn(response);
 
+        // When & Then
         mockMvc.perform(post("/api/orders/guests/search")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                // [수정] jsonPath도 id로 변경
-                .andExpect(jsonPath("$.id").value(1L))
-                .andExpect(jsonPath("$.status").value("DELIVERY_COMPLETED"))
+                .andExpect(jsonPath("$.orderId").value(1L))
+                .andExpect(jsonPath("$.statusName").value("DELIVERY_COMPLETED")) // [수정] $.status -> $.statusName
                 .andDo(print());
     }
 }

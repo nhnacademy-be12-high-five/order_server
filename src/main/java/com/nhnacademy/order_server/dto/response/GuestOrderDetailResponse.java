@@ -1,11 +1,15 @@
 package com.nhnacademy.order_server.dto.response;
 
+import com.nhnacademy.order_server.entity.Order;
+import com.nhnacademy.order_server.entity.OrderItem;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import java.time.LocalDate;
+
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Getter
 @Builder
@@ -13,28 +17,56 @@ import java.util.List;
 @AllArgsConstructor
 public class GuestOrderDetailResponse {
 
-    // 1. 주문 기본 정보
     private Long orderId;
-    private String orderNumber;    // 주문번호
-    private LocalDate orderDate;   // 주문일자
-    private String statusName;     // 주문상태 (한글)
+    private String orderNumber;
+    private LocalDateTime orderDate;
+    private String statusName;
 
-    // 2. 배송지 정보 (MyOrderResponse에는 이게 없음)
     private String receiverName;
     private String receiverPhone;
     private String address;
     private String addressDetail;
     private String deliveryRequest;
 
-    // 3. 결제 금액 정보
-    private Long totalAmount;      // 상품 총액
-    private Long deliveryFee;      // 배송비
-    private Long couponDiscount;   // 할인액
-    private Long pointDiscount;    // 포인트
-    private Long paymentAmount;    // 최종 결제액
+    private Long totalAmount;
+    private Long deliveryFee;
+    private Long couponDiscount;
+    private Long pointDiscount;
+    private Long paymentAmount;
 
-    // 4. 주문 상품 목록
     private List<GuestOrderItemResponse> orderItems;
+
+    public static GuestOrderDetailResponse from(Order order) {
+
+        List<GuestOrderItemResponse> itemResponses = order.getOrderItems().stream()
+                .map(GuestOrderItemResponse::from)
+                .collect(Collectors.toList());
+
+        String receiverName = (order.getReceiverName() != null) ? order.getReceiverName() : "";
+        String addr = (order.getReceiverAddress() != null) ? order.getReceiverAddress() : "";
+
+        Long deliveryCost = (order.getDeliveryFee() != null) ? Long.valueOf(order.getDeliveryFee()) : 0L;
+
+        return GuestOrderDetailResponse.builder()
+                .orderId(order.getId())
+                .orderNumber(String.valueOf(order.getId()))
+                .orderDate(order.getOrderDate())
+                .statusName(order.getDeliveryStatus().toString()) // 한글 변환 필요 시 로직 추가
+
+                .receiverName(receiverName)
+                .address(addr)
+                .addressDetail("")
+                .deliveryRequest("")
+
+                .totalAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getProductAmount()) : 0L)
+                .deliveryFee(deliveryCost)
+                .couponDiscount(order.getCouponDiscount() != null ? Long.valueOf(order.getCouponDiscount()) : 0L)
+                .pointDiscount(order.getPointDiscount() != null ? Long.valueOf(order.getPointDiscount()) : 0L)
+                .paymentAmount(order.getPaymentAmount() != null ? Long.valueOf(order.getPaymentAmount()) : 0L)
+
+                .orderItems(itemResponses)
+                .build();
+    }
 
     @Getter
     @Builder
@@ -43,8 +75,20 @@ public class GuestOrderDetailResponse {
     public static class GuestOrderItemResponse {
         private String title;
         private Integer quantity;
-        private Long price;         // 단가
-        private Long totalPrice;    // 총액 (단가 * 수량)
-        private String wrapperName; // 포장지 이름 (없으면 null)
+        private Long price;
+        private Long totalPrice;
+        private String wrapperName;
+
+        public static GuestOrderItemResponse from(OrderItem item) {
+            String wName = (item.getWrapper() != null) ? item.getWrapper().getWrapperName() : null;
+
+            return GuestOrderItemResponse.builder()
+                    .title(item.getBookTitle())
+                    .quantity(item.getQuantity())
+                    .price((long) item.getUnitPrice())
+                    .totalPrice(((long) item.getUnitPrice() * item.getQuantity()))
+                    .wrapperName(wName)
+                    .build();
+        }
     }
 }

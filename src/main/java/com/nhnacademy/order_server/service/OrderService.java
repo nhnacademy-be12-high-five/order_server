@@ -4,6 +4,7 @@ package com.nhnacademy.order_server.service;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
+import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -16,7 +17,7 @@ public interface OrderService {
     OrderCreateResponse createOrder(OrderCreateRequest request);
     Page<OrderResponse> getMyOrders(Long userId, Pageable pageable);
     OrderResponse getOrderDetail(Long orderId);
-    OrderResponse getGuestOrder(Long orderId, String password);
+    GuestOrderDetailResponse getGuestOrder(Long orderId, String password);
     void cancelOrder(Long orderId);
     void processPaymentSuccessMessage(PaymentSuccessMessage message);
     void cancelExpiredOrders();

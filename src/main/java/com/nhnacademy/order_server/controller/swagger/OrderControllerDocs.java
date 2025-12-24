@@ -64,7 +64,7 @@ public interface OrderControllerDocs {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "일치하는 주문 없음")
     })
-    ResponseEntity<OrderResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request);
+    ResponseEntity<GuestOrderDetailResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request);
 
     @Operation(summary = "포장지 목록 조회", description = "선택 가능한 모든 포장지 옵션을 조회합니다.")
     ResponseEntity<List<WrapperResponse>> getWrappers();

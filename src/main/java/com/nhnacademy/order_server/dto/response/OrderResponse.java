@@ -38,22 +38,17 @@ public class OrderResponse {
     @Schema(description = "주문 상품 목록")
     private List<OrderItemResponse> items;
 
-    // ==========================================
-    // [핵심 수정] 엔티티 -> DTO 변환 로직 보강
-    // ==========================================
     public static OrderResponse from(Order order) {
 
-        // 1. 주문 상품 목록 변환
         List<OrderItemResponse> itemResponses = order.getOrderItems() != null
                 ? order.getOrderItems().stream()
                 .map(OrderItemResponse::from)
                 .toList()
                 : Collections.emptyList();
 
-        // 2. 주문명(orderName) 생성 로직: "첫 번째 책 제목 외 N건"
         String generatedOrderName = "상품 정보 없음";
         if (!itemResponses.isEmpty()) {
-            String firstBookTitle = itemResponses.get(0).getBookTitle();
+            String firstBookTitle = itemResponses.getFirst().getBookTitle();
             if (itemResponses.size() > 1) {
                 generatedOrderName = firstBookTitle + " 외 " + (itemResponses.size() - 1) + "건";
             } else {
@@ -61,21 +56,19 @@ public class OrderResponse {
             }
         }
 
-        // 3. 송장 번호(trackingNumber) 추출 (Null 체크 필수)
         String trackingNum = "";
         if (order.getDelivery() != null) {
             trackingNum = order.getDelivery().getTrackingNumber();
         }
 
-        // 4. 최종 빌더 반환
         return OrderResponse.builder()
                 .id(order.getId())
-                .userId(order.getUserId())          // [추가] 이게 없어서 "비회원"으로 뜸
-                .orderName(generatedOrderName)      // [추가] 이게 없어서 상품명이 안 나옴
+                .userId(order.getUserId())
+                .orderName(generatedOrderName)
                 .orderDate(order.getOrderDate())
                 .status(order.getDeliveryStatus() != null ? order.getDeliveryStatus().name() : "UNKNOWN")
-                .totalPrice(order.getPaymentAmount()) // 필드명 주의 (totalPrice)
-                .trackingNumber(trackingNum)        // [추가] 송장번호 매핑
+                .totalPrice(order.getPaymentAmount())
+                .trackingNumber(trackingNum)
                 .items(itemResponses)
                 .build();
     }

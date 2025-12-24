@@ -24,7 +24,7 @@ public class AdminOrderController implements AdminOrderControllerDocs {
     @Override
     @GetMapping
     public ResponseEntity<CommonPageResponse<OrderResponse>> getOrders(
-            @PageableDefault(size = 10, sort = "orderDate", direction = Sort.Direction.DESC) Pageable pageable,
+            @PageableDefault(sort = "orderDate", direction = Sort.Direction.DESC) Pageable pageable,
             @RequestParam(required = false) String status
     ) {
         Page<OrderResponse> orders = adminOrderService.getOrders(pageable, status);

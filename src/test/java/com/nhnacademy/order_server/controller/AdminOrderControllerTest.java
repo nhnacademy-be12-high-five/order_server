@@ -69,8 +69,8 @@ class AdminOrderControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 // [4] JSON 경로 수정: $.content[0].orderId -> $.content[0].id
-                .andExpect(jsonPath("$.content[0].id").value(1L))
-                .andExpect(jsonPath("$.content[0].status").value("PENDING"));
+                .andExpect(jsonPath("$.data[0].id").value(1L))
+                .andExpect(jsonPath("$.data[0].status").value("PENDING"));
     }
 
     @Test
