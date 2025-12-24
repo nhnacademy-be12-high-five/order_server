@@ -5,6 +5,7 @@ import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
 import com.nhnacademy.order_server.dto.response.CommonPageResponse;
 import com.nhnacademy.order_server.dto.response.DeliveryPolicyResponse;
+import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -79,7 +80,7 @@ public class OrderController implements OrderControllerDocs {
 
     @Override
     @PostMapping("/guests/search")
-    public ResponseEntity<OrderResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request) {
+    public ResponseEntity<GuestOrderDetailResponse> getGuestOrder(@RequestBody OrderGuestLoginRequest request) {
         return ResponseEntity.ok(orderService.getGuestOrder(request.getOrderId(), request.getPassword()));
     }
 

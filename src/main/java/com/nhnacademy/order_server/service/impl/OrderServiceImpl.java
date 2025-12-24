@@ -15,6 +15,7 @@ import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
 import com.nhnacademy.order_server.dto.request.PointEarnRequest;
 import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
+import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -688,7 +689,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public OrderResponse getGuestOrder(Long orderId, String password) {
+    public GuestOrderDetailResponse getGuestOrder(Long orderId, String password) { // 반환 타입 변경
         Order order = orderRepository.findByIdWithItems(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
@@ -696,7 +697,8 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
         }
 
-        return OrderResponse.from(order);
+        // [수정] 새로 만든 DTO의 from 메서드 사용
+        return GuestOrderDetailResponse.from(order);
     }
 
     @Override
