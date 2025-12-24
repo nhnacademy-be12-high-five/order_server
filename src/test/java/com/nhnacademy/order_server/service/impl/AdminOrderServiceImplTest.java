@@ -6,16 +6,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.anyInt;
-import static org.mockito.Mockito.anyLong;
-import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
@@ -219,7 +216,7 @@ class AdminOrderServiceImplTest {
         private OrderReturn orderReturn;
 
         @Test
-        @DisplayName("반품 승인 - 전체 성공 (포인트 환불 + 적립 회수 + PG 취소)")
+        @DisplayName("반품 승인 - 전체 성공 (포인트 환불 + 적립 회수)")
         void processReturn_Approve_FullSuccess() {
             // given
             setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 1000, 500); // 1000원 사용, 500원 적립됨
@@ -234,13 +231,10 @@ class AdminOrderServiceImplTest {
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
             // 1. 사용 포인트 환불 (orderId 포함 검증)
-            verify(memberClient).cancelPoint(eq(100L), eq(1000), eq(1L));
+            verify(memberClient).revertPoint(any(PointTransactionRequest.class));
 
             // 2. 적립 포인트 회수
             verify(memberClient).deductPoint(eq(100L), eq(500));
-
-            // 3. PG 취소
-            verify(paymentClient).cancelPayment(eq("toss_key"), any(PaymentCancelRequest.class));
         }
 
         @Test
@@ -252,30 +246,12 @@ class AdminOrderServiceImplTest {
 
             // 포인트 환불 시 예외 발생
             willThrow(new RuntimeException("Connection Refused"))
-                    .given(memberClient).cancelPoint(anyLong(), anyInt(), anyLong());
+                    .given(memberClient).revertPoint(any(PointTransactionRequest.class));
 
             // when & then
             assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
                     .isInstanceOf(OrderException.class)
                     .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.MEMBER_SERVICE_ERROR);
-        }
-
-        @Test
-        @DisplayName("반품 승인 실패 - PG 서버 오류")
-        void processReturn_Approve_Fail_PGService() {
-            // given
-            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 0, 0); // 포인트 사용 X
-            ReflectionTestUtils.setField(order, "paymentKey", "toss_key");
-            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
-
-            // PG 취소 시 예외 발생
-            willThrow(new RuntimeException("PG Error"))
-                    .given(paymentClient).cancelPayment(anyString(), any());
-
-            // when & then
-            assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
-                    .isInstanceOf(OrderException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.EXTERNAL_API_ERROR);
         }
 
         @Test

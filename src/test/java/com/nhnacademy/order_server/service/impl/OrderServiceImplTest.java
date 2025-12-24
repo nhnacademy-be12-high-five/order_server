@@ -105,6 +105,7 @@ class OrderServiceImplTest {
         ReflectionTestUtils.setField(request, "requestDeliveryDate", LocalDate.now().plusDays(2));
         ReflectionTestUtils.setField(request, "orderItems", List.of(itemReq));
         ReflectionTestUtils.setField(request, "usedPoint", 1000);
+        ReflectionTestUtils.setField(orderService, "self", orderService);
     }
 
     @Nested

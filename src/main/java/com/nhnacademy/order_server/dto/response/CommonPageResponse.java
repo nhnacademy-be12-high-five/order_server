@@ -21,4 +21,8 @@ public class CommonPageResponse<T> {
         this.pageSize = page.getSize();
         this.isLast = page.isLast();
     }
+
+    public static <T> CommonPageResponse<T> from(Page<T> page) {
+        return new CommonPageResponse<>(page);
+    }
 }
