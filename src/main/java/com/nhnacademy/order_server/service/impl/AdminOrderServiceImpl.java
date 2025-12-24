@@ -59,6 +59,18 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             throw new OrderException(OrderErrorCode.INVALID_REQUEST);
         }
 
+        if (newStatus == DeliveryStatus.RETURN_COMPLETED) {
+            // 해당 주문의 반품 요청 정보를 찾음
+            OrderReturn orderReturn = orderReturnRepository.findByOrderId(orderId)
+                    .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
+
+            // 기존에 만들어둔 환불 승인 로직(approveReturn)을 호출
+            approveReturn(order, orderReturn);
+
+            // approveReturn 내부에서 status 업데이트를 하므로 여기서 리턴
+            return;
+        }
+
         // 1. 배송 중 (DELIVERING)
         if (newStatus == DeliveryStatus.DELIVERING) {
             if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {

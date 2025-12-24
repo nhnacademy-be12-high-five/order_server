@@ -74,7 +74,8 @@ public class OrderReturnServiceImpl implements OrderReturnService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED
-                && order.getDeliveryStatus() != DeliveryStatus.DELIVERING) {
+                && order.getDeliveryStatus() != DeliveryStatus.DELIVERING
+                && order.getDeliveryStatus() != DeliveryStatus.PURCHASE_CONFIRMED) {
             throw new OrderException(OrderErrorCode.RETURN_NOT_ELIGIBLE);
         }
         if (order.getOrderReturn() != null) {
