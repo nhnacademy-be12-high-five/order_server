@@ -1,51 +1,19 @@
 package com.nhnacademy.order_server.service.impl;
 
-import com.nhnacademy.order_server.adapter.BookClient;
-import com.nhnacademy.order_server.adapter.CartClient;
-import com.nhnacademy.order_server.adapter.CouponClient;
-import com.nhnacademy.order_server.adapter.MemberClient;
-import com.nhnacademy.order_server.adapter.PaymentClient;
+import com.nhnacademy.order_server.adapter.*;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
-import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
-import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
-import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
-import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
-import com.nhnacademy.order_server.dto.request.PointEarnRequest;
-import com.nhnacademy.order_server.dto.request.StockRequest;
-import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
-import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
-import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
-import com.nhnacademy.order_server.dto.response.OrderResponse;
-import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
+import com.nhnacademy.order_server.dto.request.*;
+import com.nhnacademy.order_server.dto.response.*;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
-import com.nhnacademy.order_server.entity.Delivery;
-import com.nhnacademy.order_server.entity.Order;
-import com.nhnacademy.order_server.entity.OrderItem;
-import com.nhnacademy.order_server.entity.Wrapper;
+import com.nhnacademy.order_server.entity.*;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
-import com.nhnacademy.order_server.repository.DeliveryRepository;
-import com.nhnacademy.order_server.repository.OrderRepository;
-import com.nhnacademy.order_server.repository.WrapperRepository;
+import com.nhnacademy.order_server.repository.*;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -59,6 +27,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -68,7 +42,6 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final DeliveryRepository deliveryRepository;
     private final WrapperRepository wrapperRepository;
-
     private final DeliveryService deliveryService;
 
     private final BookClient bookClient;
@@ -78,643 +51,67 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentClient paymentClient;
 
     private final PasswordEncoder passwordEncoder;
-
     private final RabbitTemplate rabbitTemplate;
-
-    private static final int DEFAULT_DELIVERY_DAYS = 2;
 
     @Autowired
     @Lazy
-    private OrderService self;
+    private OrderService self; // REQUIRES_NEW 트랜잭션을 위한 자기 참조 호출
+
+    private static final int DEFAULT_DELIVERY_DAYS = 2;
+
+    // =====================================================================================
+    // 1. CREATE (주문 생성 및 트랜잭션 처리)
+    // =====================================================================================
 
     @Override
     public OrderCreateResponse createOrder(OrderCreateRequest request) {
-
-        Long userId = request.getUserId();
-        int usedPoint = request.getUsedPoint() != null ? request.getUsedPoint() : 0;
         String orderKey = UUID.randomUUID().toString();
+        double earnRate = getMemberEarnRate(request.getUserId());
 
-        double earnRate = 0.0;
-        OrderCalculationData orderData;
-        OrderCreateRequest.OrderCalculationResult calculationResult;
-        List<Long> heldStockBookIds;
+        // 1-1. 상품 정보 조회 및 재고 선점
+        OrderCalculationData orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
 
-        // 회원 적립률 조회 (실패해도 OK)
-        if (userId != null) {
-            try {
-                MemberGradeResponse grade = memberClient.getMemberGrade(userId);
-                earnRate = grade.getEarnRate();
-            } catch (Exception e) {
-                log.warn("회원 등급 조회 실패, 적립률 0 처리. userId={}", userId);
-            }
-        }
-
-        // 재고 선점 + 주문 아이템 계산
-        orderData = processOrderItemsAndHoldStock(request, earnRate, orderKey);
-
-        int deliveryFee = calculateDeliveryFee(
-                orderData.totalProductAmount(),
-                request.getReceiverAddress()
-        );
-
-        calculationResult = calculateFinalAmounts(
-                request, orderData, deliveryFee
-        );
-
-        heldStockBookIds = orderData.tempOrderItems().stream()
-                .map(OrderItem::getBookId)
-                .distinct()
-                .toList();
+        // 1-2. 최종 결제 금액 계산
+        int deliveryFee = calculateDeliveryFee(orderData.totalProductAmount(), request.getReceiverAddress());
+        OrderCreateRequest.OrderCalculationResult result = calculateFinalAmounts(request, orderData, deliveryFee);
 
         try {
-            return self.createOrderTransactional(
-                    request,
-                    userId,
-                    usedPoint,
-                    orderKey,
-                    orderData,
-                    calculationResult
-            );
-
+            // 1-3. DB 저장 및 외부 연동 (포인트/쿠폰 예약) - 별도 트랜잭션 수행
+            return self.createOrderTransactional(request, orderKey, orderData, result);
         } catch (Exception e) {
-            compensateTransaction(
-                    userId,
-                    usedPoint,
-                    heldStockBookIds,
-                    orderKey,
-                    e
-            );
+            compensateTransaction(request.getUserId(), request.getUsedPoint(), orderData, orderKey);
             throw e;
         }
     }
 
+    @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public OrderCreateResponse createOrderTransactional(
-            OrderCreateRequest request,
-            Long userId,
-            int usedPoint,
-            String orderKey,
-            OrderCalculationData orderData,
-            OrderCreateRequest.OrderCalculationResult calculationResult
-    ) {
+    public OrderCreateResponse createOrderTransactional(OrderCreateRequest request, String orderKey,
+                                                        OrderCalculationData orderData,
+                                                        OrderCreateRequest.OrderCalculationResult result) {
         String encryptedPassword = validateAndEncryptPassword(request);
 
-        // 주문 저장
-        Order order = saveOrder(
-                request,
-                calculationResult,
-                orderKey,
-                encryptedPassword,
-                orderData.tempOrderItems()
-        );
+        // 주문 엔티티 저장
+        Order order = saveOrder(request, result, orderKey, encryptedPassword, orderData.tempOrderItems());
+        order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
 
-        if (order.getDeliveryStatus() == null) {
-            order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
-        }
-
-        // 쿠폰 사용 확정
+        // 쿠폰 사용 및 포인트 예약 (회원인 경우)
         if (order.getCouponId() != null) {
-            MemberCouponUseRequest useReq = new MemberCouponUseRequest(request.getCouponId(), order.getId());
-            couponClient.useCoupon(order.getUserId(), useReq);
+            couponClient.useCoupon(order.getUserId(), new MemberCouponUseRequest(request.getCouponId(), order.getId()));
+        }
+        if (request.getUserId() != null && request.getUsedPoint() > 0) {
+            memberClient.reservePoint(request.getUserId(), request.getUsedPoint(), order.getId());
         }
 
-        // 포인트 예약
-        if (userId != null && usedPoint > 0) {
-            memberClient.reservePoint(userId, usedPoint, order.getId());
-        }
-
-        // 배송 정보 저장
         saveDelivery(order, request.getRequestDeliveryDate());
+        tryClearCart(request.getUserId());
 
-        // 장바구니 비우기 (실패해도 무관)
-        if (userId != null) {
-            try {
-                cartClient.clearCart(userId);
-                log.warn("장바구니 비우기 성공 : userId={}", userId);
-            } catch (Exception e) {
-                log.warn("장바구니 비우기 실패 (무시): userId={}", userId);
-            }
-        }
-
-        return createOrderResponse(
-                order,
-                orderData.firstBookTitle(),
-                request.getOrderItems().size()
-        );
+        return OrderCreateResponse.from(order, orderData.firstBookTitle(), request.getOrderItems().size());
     }
 
-
-    @Override
-    public void processPaymentSuccessMessage(PaymentSuccessMessage message) {
-        Long orderId = message.getOrderId();
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        // PENDING -> PAYMENT_WAITING 체크
-        if (order.getDeliveryStatus() != DeliveryStatus.PAYMENT_WAITING) {
-            log.info("이미 처리된 주문입니다. (Idempotency Check) OrderID={}, Status={}", orderId, order.getDeliveryStatus());
-            return;
-        }
-
-        if (order.getPaymentAmount() != message.getTotalAmount().intValue()) {
-            log.error("주문 금액 불일치! OrderID={}, OrderAmount={}, PaidAmount={}",
-                    orderId, order.getPaymentAmount(), message.getTotalAmount());
-            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-        }
-
-        // WAITING -> PREPARING (배송 준비 중)
-        order.updateStatus(DeliveryStatus.PREPARING);
-        order.setPaymentKey(message.getPaymentKey());
-
-        finalizeExternalResources(order);
-        log.info("RabbitMQ 결제 메시지 처리 완료. OrderID={}", orderId);
-    }
-
-    @Override
-    public void cancelOrder(Long orderId) {
-        self.cancelOrderTransactional(orderId);
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void cancelOrderTransactional(Long orderId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-
-        if (!isCancelable(order.getDeliveryStatus())) {
-            throw new OrderException(OrderErrorCode.CANNOT_CANCEL_ORDER);
-        }
-
-        if (order.getDeliveryStatus() == DeliveryStatus.PREPARING) {
-            processPreparingOrderCancellation(order);
-        } else if (order.getDeliveryStatus() == DeliveryStatus.PAYMENT_WAITING) {
-            processPaymentWaitingOrderCancellation(order);
-        }
-
-        order.updateStatus(DeliveryStatus.CANCELED);  // 트랜잭션 안에서 flush 발생
-    }
-
-    @Override
-    @Transactional
-    public void autoCompleteDelivery() {
-        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
-
-        List<Order> deliveringOrders = orderRepository.findByDeliveryStatusAndDelivery_ActualShipDateBefore(
-                DeliveryStatus.DELIVERING, threshold
-        );
-
-        for (Order order : deliveringOrders) {
-            order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
-
-            if (order.getDelivery() != null) {
-                order.getDelivery().completeDelivery();
-            }
-            log.info("자동 배송 완료 처리: OrderID={}", order.getId());
-        }
-    }
-
-    // [수정] 배송 완료 -> 구매 확정 (기준: 배송 완료 후 10일 경과)
-    @Override
-    @Transactional
-    public void autoConfirmPurchase() {
-        LocalDateTime threshold = LocalDateTime.now().minusDays(10); // 10일 지남
-
-        List<Order> completedOrders = orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(
-                DeliveryStatus.DELIVERY_COMPLETED, threshold
-        );
-
-        for (Order order : completedOrders) {
-            try {
-                // 기존 구매 확정 로직 재사용 (포인트 적립 등 포함)
-                this.purchaseConfirm(order.getId());
-                log.info("자동 구매 확정 처리: OrderID={}", order.getId());
-            } catch (Exception e) {
-                log.error("자동 구매 확정 실패: orderId={}, Error={}", order.getId(), e.getMessage());
-            }
-        }
-    }
-
-    @Override
-    public void cancelExpiredOrders() {
-        LocalDateTime threshold = LocalDateTime.now().minusHours(24);
-
-        List<Order> expiredOrders = orderRepository.findByDeliveryStatusAndOrderDateBefore(
-                DeliveryStatus.PAYMENT_WAITING,
-                threshold
-        );
-
-        if (expiredOrders.isEmpty()) {
-            return;
-        }
-
-        log.info("[Scheduler] 결제 대기 만료 주문 취소 시작: 대상 {}건", expiredOrders.size());
-
-        for (Order order : expiredOrders) {
-            try {
-                processPaymentWaitingOrderCancellation(order);
-
-                order.updateStatus(DeliveryStatus.CANCELED);
-                log.info("만료 주문 취소 완료: OrderID={}", order.getId());
-
-            } catch (Exception e) {
-                log.error("만료 주문 취소 중 오류 발생: OrderID={}, Error={}", order.getId(), e.getMessage());
-            }
-        }
-    }
-
-    @Override
-    @Transactional
-    public void purchaseConfirm(Long orderId) {
-        log.info("purchaseConfirm 호출: orderId={}", orderId);
-
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> {
-                    log.warn("주문을 찾을 수 없습니다: orderId={}", orderId);
-                    return new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
-                });
-
-        log.info("주문 상태 확인: orderId={}, currentStatus={}", orderId, order.getDeliveryStatus());
-
-        // 이미 구매확정이거나 취소/반품 완료 상태면 예외 처리
-        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) {
-            log.warn("이미 구매확정된 주문입니다: orderId={}", orderId);
-            throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
-        }
-        if (order.getDeliveryStatus() == DeliveryStatus.CANCELED ||
-                order.getDeliveryStatus() == DeliveryStatus.RETURN_COMPLETED) {
-            log.warn("취소 또는 반품 완료된 주문입니다: orderId={}, status={}", orderId, order.getDeliveryStatus());
-            throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
-        }
-
-        // 구매 확정 처리
-        order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
-        log.info("주문 상태 업데이트 완료: orderId={}, newStatus={}", orderId, order.getDeliveryStatus());
-
-        // RabbitMQ 메시지 발행 (point-queue)
-        if (order.getUserId() != null && order.getPaymentAmount() != null) {
-            PointEarnRequest pointRequest = PointEarnRequest.builder()
-                    .memberId(order.getUserId())
-                    .eventType("EARN_ORDER")
-                    .pureAmount(order.getPaymentAmount())
-                    .orderId(order.getId())
-                    .build();
-
-            try {
-                rabbitTemplate.convertAndSend("point-queue", pointRequest);
-                log.info("포인트 적립 메시지 발행 완료: orderId={}", orderId);
-            } catch (Exception e) {
-                log.error("포인트 적립 메시지 발행 실패: orderId={}, Error={}", orderId, e.getMessage(), e);
-            }
-        }
-
-        log.info("구매 확정 완료: orderId={}", orderId);
-    }
-
-
-    // --- Private Methods ---
-
-    private String validateAndEncryptPassword(OrderCreateRequest request) {
-        if (request.getUserId() == null) {
-            if (request.getOrderPassword() == null || request.getOrderPassword().isBlank()) {
-                throw new OrderException(OrderErrorCode.ORDER_PASSWORD_REQUIRED);
-            }
-            return passwordEncoder.encode(request.getOrderPassword());
-        }
-        return null;
-    }
-
-    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate,
-                                                               String orderKey) {
-        Map<Long, Wrapper> wrapperMap = getWrapperMap(request.getOrderItems());
-        Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
-
-        Map<String, Integer> mergedQuantityMap = new LinkedHashMap<>();
-        Map<String, Long> keyToBookIdMap = new HashMap<>();
-        Map<String, Long> keyToWrapperIdMap = new HashMap<>();
-
-        String firstBookTitle = null;
-        int totalProductAmount = 0;
-        int totalWrappingFee = 0;
-        int totalEarnedPoint = 0;
-
-        for (OrderCreateRequest.OrderItemRequest itemReq : request.getOrderItems()) {
-            Long bookId = itemReq.getBookId();
-            BookInfoResponse bookInfo = bookInfoMap.get(bookId);
-            if (bookInfo == null) {
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-            }
-
-            if (firstBookTitle == null) {
-                firstBookTitle = bookInfo.getTitle();
-            }
-
-            Long wrapperId = itemReq.getWrapperId();
-            String key = bookId + ":" + (wrapperId != null ? wrapperId : "null");
-
-            mergedQuantityMap.merge(key, itemReq.getQuantity(), Integer::sum);
-            keyToBookIdMap.put(key, bookId);
-            keyToWrapperIdMap.put(key, wrapperId);
-
-            int itemAmount = bookInfo.getPrice() * itemReq.getQuantity();
-            totalProductAmount += itemAmount;
-            totalEarnedPoint += (int) (itemAmount * earnRate);
-
-            if (wrapperId != null) {
-                Wrapper wrapper = wrapperMap.get(wrapperId);
-                if (wrapper == null) {
-                    throw new OrderException(OrderErrorCode.WRAPPER_NOT_FOUND);
-                }
-                totalWrappingFee += wrapper.getWrapperPrice() * itemReq.getQuantity();
-            }
-        }
-
-        List<OrderItem> finalOrderItems = new ArrayList<>();
-        Map<Long, Integer> stockMap = new HashMap<>();
-
-        for (Map.Entry<String, Integer> entry : mergedQuantityMap.entrySet()) {
-            String key = entry.getKey();
-            Integer totalQty = entry.getValue();
-            Long bookId = keyToBookIdMap.get(key);
-            Long wrapperId = keyToWrapperIdMap.get(key);
-
-            BookInfoResponse bookInfo = bookInfoMap.get(bookId);
-            Wrapper wrapper = (wrapperId != null) ? wrapperMap.get(wrapperId) : null;
-
-            stockMap.merge(bookId, totalQty, Integer::sum);
-
-            OrderItem orderItem = OrderItem.builder()
-                    .bookId(bookId)
-                    .bookTitle(bookInfo.getTitle())
-                    .quantity(totalQty)
-                    .unitPrice(bookInfo.getPrice())
-                    .wrapper(wrapper)
-                    .isWrapped(wrapper != null)
-                    .key(UUID.randomUUID().toString())
-                    .build();
-
-            finalOrderItems.add(orderItem);
-        }
-
-        List<StockRequest> stockRequests = stockMap.entrySet().stream()
-                .map(e -> new StockRequest(e.getKey(), e.getValue()))
-                .collect(Collectors.toList());
-
-        try {
-            if (!stockRequests.isEmpty()) {
-                bookClient.holdStockBatch(stockRequests, orderKey);
-                log.info("Batch Stock hold success: OrderKey={}, UniqueItems={}", orderKey, stockRequests.size());
-            }
-        } catch (Exception e) {
-            log.error("Batch Stock hold failed: OrderKey={}", orderKey, e);
-            throw new OrderException(OrderErrorCode.OUT_OF_STOCK);
-        }
-
-        return OrderCalculationData.builder()
-                .tempOrderItems(finalOrderItems)
-                .totalProductAmount(totalProductAmount)
-                .totalWrappingFee(totalWrappingFee)
-                .totalEarnedPoint(totalEarnedPoint)
-                .firstBookTitle(firstBookTitle)
-                .build();
-    }
-
-    private Map<Long, Wrapper> getWrapperMap(List<OrderCreateRequest.OrderItemRequest> items) {
-        Set<Long> wrapperIds = items.stream()
-                .map(OrderCreateRequest.OrderItemRequest::getWrapperId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        if (wrapperIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        return wrapperRepository.findAllById(wrapperIds).stream()
-                .collect(Collectors.toMap(Wrapper::getId, Function.identity()));
-    }
-
-    private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
-        List<Long> bookIds = items.stream()
-                .map(OrderCreateRequest.OrderItemRequest::getBookId)
-                .distinct()
-                .collect(Collectors.toList());
-        try {
-            ResponseEntity<List<BookInfoResponse>> response = bookClient.getBooksBulk(bookIds);
-
-            if (response == null || response.getBody() == null || response.getBody().isEmpty()) {
-                log.error("도서 정보 조회 응답이 비어있음: bookIds={}", bookIds);
-                return Collections.emptyMap();
-            }
-
-            return response.getBody().stream()
-                    .collect(Collectors.toMap(
-                            BookInfoResponse::getBookId,
-                            Function.identity(),
-                            (existing, replacement) -> existing
-                    ));
-        } catch (Exception e) {
-            log.error("도서 정보 배치 조회 실패", e);
-            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
-        }
-    }
-
-    private int calculateDeliveryFee(int productAmount, String address) {
-        try {
-            return deliveryService.calculateDeliveryFee(productAmount, address);
-        } catch (Exception e) {
-            log.error("배송비 계산 실패: {}", e.getMessage());
-            throw new OrderException(OrderErrorCode.DELIVERY_FEE_CALCULATION_ERROR);
-        }
-    }
-
-    private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(
-            OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
-
-        int couponDiscount = 0;
-
-        if (request.getCouponId() != null) {
-            try {
-                CouponCalculationRequest calcReq = new CouponCalculationRequest(
-                        request.getCouponId(),
-                        (long) data.totalProductAmount()
-                );
-
-                if (request.getUserId() != null) {
-                    CouponCalculationResponse response = couponClient.calculateCoupon(request.getUserId(), calcReq);
-                    if (response != null && response.getDiscountAmount() != null) {
-                        couponDiscount = response.getDiscountAmount().intValue();
-                    }
-                }
-
-            } catch (Exception e) {
-                log.error("쿠폰 할인 계산 실패", e);
-                throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
-            }
-            couponDiscount = Math.min(couponDiscount, data.totalProductAmount());
-        }
-
-        int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
-
-        int finalPaymentAmount = Math.max(0,
-                (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
-
-        return OrderCreateRequest.OrderCalculationResult.builder()
-                .productAmount(data.totalProductAmount())
-                .deliveryFee(deliveryFee)
-                .wrappingFee(data.totalWrappingFee())
-                .couponDiscount(couponDiscount)
-                .pointDiscount(usedPoint)
-                .paymentAmount(finalPaymentAmount)
-                .earnedPoint(data.totalEarnedPoint())
-                .build();
-    }
-
-    private Order saveOrder(OrderCreateRequest request, OrderCreateRequest.OrderCalculationResult result,
-                            String orderKey, String encryptedPassword, List<OrderItem> items) {
-        Order order = request.toEntity(result, orderKey, encryptedPassword);
-        items.forEach(order::addOrderItem);
-        if (request.getCouponId() != null) {
-            order.setCouponId(request.getCouponId());
-        }
-        return orderRepository.save(order);
-    }
-
-    private void saveDelivery(Order order, LocalDate requestDate) {
-        LocalDate date = (requestDate != null) ? requestDate : LocalDate.now().plusDays(DEFAULT_DELIVERY_DAYS);
-        Delivery delivery = Delivery.builder()
-                .order(order)
-                .requestDeliveryDate(date)
-                .estimatedDeliveryDate(date)
-                .build();
-        deliveryRepository.save(delivery);
-    }
-
-
-    private OrderCreateResponse createOrderResponse(Order order, String firstBookTitle, int totalItems) {
-        return OrderCreateResponse.from(order, firstBookTitle, totalItems);
-    }
-
-    private void compensateTransaction(Long userId, int usedPoint, List<Long> heldStockBookIds, String orderKey,
-                                       Exception originalException) {
-        if (userId != null && usedPoint > 0) {
-            try {
-                memberClient.cancelPoint(userId, usedPoint, 0L);
-            } catch (Exception e) {
-                log.error("CRITICAL: 포인트 예약 취소 실패! UserID={}, Amount={}", userId, usedPoint, e);
-            }
-        }
-        if (!heldStockBookIds.isEmpty()) {
-            try {
-                log.info("주문 생성 실패로 인한 재고 롤백 시도: {}", heldStockBookIds);
-                bookClient.releaseHeldStock(heldStockBookIds, orderKey);
-            } catch (Exception e) {
-                log.error("CRITICAL: 재고 롤백 실패. 수동 복구 필요. IDs={}, OrderKey={}", heldStockBookIds, orderKey, e);
-            }
-        }
-    }
-
-
-    private void finalizeExternalResources(Order order) {
-        List<String> failedOperations = new ArrayList<>();
-        log.info("final메서드 사용");
-
-        // 1. 재고 확정
-        try {
-            List<Long> bookIds = new ArrayList<>();
-            for (OrderItem item : order.getOrderItems()) {
-                for (int i = 0; i < item.getQuantity(); i++) {
-                    bookIds.add(item.getBookId());
-                }
-            }
-            bookClient.confirmStockDeduction(bookIds, order.getOrderKey());
-        } catch (Exception e) {
-            log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-            failedOperations.add("STOCK");
-        }
-
-        // 3. 포인트 차감 확정
-        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
-            try {
-                memberClient.confirmPoint(order.getUserId(), order.getPointDiscount(), order.getId());
-            } catch (Exception e) {
-                log.error("포인트 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                failedOperations.add("POINT");
-            }
-        }
-
-        if (!failedOperations.isEmpty()) {
-            log.warn("주문 후처리 일부 실패. 재처리 필요 항목: {}", failedOperations);
-            order.setPendingOperations(failedOperations);
-        }
-    }
-
-    private boolean isCancelable(DeliveryStatus status) {
-        return status == DeliveryStatus.PREPARING || status == DeliveryStatus.PAYMENT_WAITING;
-    }
-
-    // [이름 변경] processWaitingOrderCancellation -> processPreparingOrderCancellation
-    private void processPreparingOrderCancellation(Order order) {
-        // 1. PG 환불
-        if (order.getPaymentKey() != null) {
-            try {
-                PaymentCancelRequest cancelRequest = new PaymentCancelRequest("사용자 주문 취소", order.getPaymentAmount());
-                paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
-            } catch (Exception e) {
-                log.error("PG 결제 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                throw new OrderException(OrderErrorCode.PAYMENT_CANCEL_FAILED);
-            }
-        }
-
-        // 2. 포인트 환불
-        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
-            try {
-                memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
-            } catch (Exception e) {
-                log.error("포인트 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
-            }
-        }
-
-        // 3. 쿠폰 복구
-        if (order.getCouponId() != null) {
-            try {
-                MemberCouponCancelRequest cancelReq = new MemberCouponCancelRequest(order.getCouponId(), order.getId());
-                couponClient.cancelCouponUsage(order.getUserId(), cancelReq);
-            } catch (Exception e) {
-                log.error("쿠폰 취소 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
-            }
-        }
-
-        // 4. 재고 복구
-        try {
-            List<StockRequest> restoreRequests = order.getOrderItems().stream()
-                    .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
-                    .toList();
-            String idempotencyKey = order.getId() + "-restore";
-            bookClient.restoreStock(restoreRequests, idempotencyKey);
-
-        } catch (Exception e) {
-            log.error("재고 복구 실패 (배송 준비 중 취소): OrderID={}", order.getId(), e);
-            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
-        }
-    }
-
-    // [이름 변경 & 통합] processPaymentWaitingOrderCancellation
-    private void processPaymentWaitingOrderCancellation(Order order) {
-        // 1. 포인트 예약 취소
-        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
-            try {
-                memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
-            } catch (Exception e) {
-                log.error("포인트 예약 취소 실패 (결제 대기 중 취소): OrderID={}", order.getId(), e);
-            }
-        }
-
-        // 2. 재고 선점 해제
-        try {
-            List<Long> bookIds = order.getOrderItems().stream().map(OrderItem::getBookId).toList();
-            bookClient.releaseHeldStock(bookIds, order.getOrderKey());
-        } catch (Exception e) {
-            log.error("재고 선점 해제 실패 (결제 대기 중 취소): OrderID={}, OrderKey={}", order.getId(), order.getOrderKey(), e);
-        }
-    }
+    // =====================================================================================
+    // 2. READ (목록 조회, 상세 조회 및 통계 집계)
+    // =====================================================================================
 
     @Override
     @Transactional(readOnly = true)
@@ -725,48 +122,267 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public OrderResponse getOrderDetail(Long orderId) {
-        Order order = orderRepository.findByIdWithItems(orderId)
+        return orderRepository.findByIdWithItems(orderId)
+                .map(OrderResponse::from)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-        return OrderResponse.from(order);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public GuestOrderDetailResponse getGuestOrder(Long orderId, String password) { // 반환 타입 변경
+    public GuestOrderDetailResponse getGuestOrder(Long orderId, String password) {
         Order order = orderRepository.findByIdWithItems(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
         if (!passwordEncoder.matches(password, order.getOrderPassword())) {
             throw new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
         }
-
-        // [수정] 새로 만든 DTO의 from 메서드 사용
         return GuestOrderDetailResponse.from(order);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public OrderValidationInfoResponse getValidationInfo(String orderKey) {
-        Order order = orderRepository.findByOrderKey(orderKey)
-                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-        return OrderValidationInfoResponse.from(order);
+    public List<OrderAggregationDto> getOrderAggregations(LocalDateTime start, LocalDateTime end) {
+        // [N+1 해결] 회원 등급 산정용 벌크 집계 (DB 레벨 GROUP BY)
+        return orderRepository.findOrderAggregations(start, end);
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Long getTotalPaymentAmount(Long userId, LocalDateTime since) {
+        // 특정 기간 구매 확정 금액 숫자 합계만 반환
+        Long total = orderRepository.sumPaymentAmountByUserId(userId, since);
+        return total != null ? total : 0L;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable) {
         LocalDateTime threeMonthsAgo = LocalDateTime.now().minusMonths(3);
+        return orderRepository.findByUserIdAndOrderDateAfter(userId, threeMonthsAgo, pageable).map(OrderResponse::from);
+    }
 
-        return orderRepository.findByUserIdAndOrderDateAfter(userId, threeMonthsAgo, pageable)
-                .map(OrderResponse::from);
+    @Override
+    @Transactional(readOnly = true)
+    public OrderValidationInfoResponse getValidationInfo(String orderKey) {
+        return orderRepository.findByOrderKey(orderKey)
+                .map(OrderValidationInfoResponse::from)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
     }
 
     @Override
     @Transactional(readOnly = true)
     public boolean hasPurchasedBook(Long memberId, Long bookId) {
-        return orderRepository.hasPurchasedBook(
-                memberId,
-                bookId
-        );
+        return orderRepository.hasPurchasedBook(memberId, bookId);
     }
 
+    // =====================================================================================
+    // 3. UPDATE (결제 성공 처리 및 구매 확정)
+    // =====================================================================================
+
+    @Override
+    public void processPaymentSuccessMessage(PaymentSuccessMessage message) {
+        Order order = orderRepository.findById(message.getOrderId())
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+
+        if (order.getDeliveryStatus() != DeliveryStatus.PAYMENT_WAITING) return;
+
+        order.updateStatus(DeliveryStatus.PREPARING);
+        order.setPaymentKey(message.getPaymentKey());
+
+        finalizeExternalResources(order); // 재고 차감 확정 및 포인트 확정
+    }
+
+    @Override
+    public void purchaseConfirm(Long orderId) {
+        Order order = orderRepository.findById(orderId).orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED) return;
+
+        order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
+        if (order.getUserId() != null) {
+            sendPointEarnMessage(order); // 비동기 포인트 적립
+        }
+    }
+
+    // =====================================================================================
+    // 4. CANCEL & BATCH (주문 취소 및 자동화 스케줄러)
+    // =====================================================================================
+
+    @Override
+    public void cancelOrder(Long orderId) {
+        self.cancelOrderTransactional(orderId);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void cancelOrderTransactional(Long orderId) {
+        Order order = orderRepository.findById(orderId).orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!isCancelable(order.getDeliveryStatus())) throw new OrderException(OrderErrorCode.CANNOT_CANCEL_ORDER);
+
+        if (order.getDeliveryStatus() == DeliveryStatus.PREPARING) {
+            processPreparingOrderCancellation(order);
+        } else {
+            processPaymentWaitingOrderCancellation(order);
+        }
+        order.updateStatus(DeliveryStatus.CANCELED);
+    }
+
+    @Override
+    public void autoCompleteDelivery() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
+        orderRepository.findByDeliveryStatusAndDelivery_ActualShipDateBefore(DeliveryStatus.DELIVERING, threshold)
+                .forEach(order -> {
+                    order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+                    if (order.getDelivery() != null) order.getDelivery().completeDelivery();
+                });
+    }
+
+    @Override
+    public void autoConfirmPurchase() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(10);
+        orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(DeliveryStatus.DELIVERY_COMPLETED, threshold)
+                .forEach(order -> this.purchaseConfirm(order.getId()));
+    }
+
+    @Override
+    public void cancelExpiredOrders() {
+        LocalDateTime threshold = LocalDateTime.now().minusHours(24);
+        orderRepository.findByDeliveryStatusAndOrderDateBefore(DeliveryStatus.PAYMENT_WAITING, threshold)
+                .forEach(order -> {
+                    try {
+                        processPaymentWaitingOrderCancellation(order);
+                        order.updateStatus(DeliveryStatus.CANCELED);
+                    } catch (Exception ignored) {}
+                });
+    }
+
+    // =====================================================================================
+    // 5. PRIVATE HELPERS
+    // =====================================================================================
+
+    private double getMemberEarnRate(Long userId) {
+        if (userId == null) return 0.0;
+        try {
+            return memberClient.getMemberGrade(userId).getEarnRate();
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate, String orderKey) {
+        Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
+        Map<Long, Wrapper> wrapperMap = getWrapperMap(request.getOrderItems());
+
+        List<OrderItem> finalOrderItems = new ArrayList<>();
+        List<StockRequest> stockRequests = new ArrayList<>();
+        int totalProductAmount = 0;
+        int totalWrappingFee = 0;
+
+        for (OrderCreateRequest.OrderItemRequest itemReq : request.getOrderItems()) {
+            BookInfoResponse book = bookInfoMap.get(itemReq.getBookId());
+            Wrapper wrapper = (itemReq.getWrapperId() != null) ? wrapperMap.get(itemReq.getWrapperId()) : null;
+
+            totalProductAmount += book.getPrice() * itemReq.getQuantity();
+            if (wrapper != null) totalWrappingFee += wrapper.getWrapperPrice() * itemReq.getQuantity();
+
+            finalOrderItems.add(OrderItem.builder().bookId(book.getBookId()).bookTitle(book.getTitle())
+                    .quantity(itemReq.getQuantity()).unitPrice(book.getPrice()).wrapper(wrapper)
+                    .isWrapped(wrapper != null).key(UUID.randomUUID().toString()).build());
+
+            stockRequests.add(new StockRequest(book.getBookId(), itemReq.getQuantity()));
+        }
+
+        bookClient.holdStockBatch(stockRequests, orderKey);
+
+        return OrderCalculationData.builder().tempOrderItems(finalOrderItems).totalProductAmount(totalProductAmount)
+                .totalWrappingFee(totalWrappingFee).totalEarnedPoint((int)(totalProductAmount * earnRate))
+                .firstBookTitle(finalOrderItems.get(0).getBookTitle()).build();
+    }
+
+    private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
+        int couponDiscount = calculateCouponDiscount(request, data.totalProductAmount());
+        int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
+        int finalPayment = Math.max(0, (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
+
+        return OrderCreateRequest.OrderCalculationResult.builder().productAmount(data.totalProductAmount())
+                .deliveryFee(deliveryFee).wrappingFee(data.totalWrappingFee()).couponDiscount(couponDiscount)
+                .pointDiscount(usedPoint).paymentAmount(finalPayment).earnedPoint(data.totalEarnedPoint()).build();
+    }
+
+    private int calculateCouponDiscount(OrderCreateRequest request, int totalProductAmount) {
+        if (request.getCouponId() == null || request.getUserId() == null) return 0;
+        try {
+            CouponCalculationResponse resp = couponClient.calculateCoupon(request.getUserId(),
+                    new CouponCalculationRequest(request.getCouponId(), (long) totalProductAmount));
+            return (resp != null && resp.getDiscountAmount() != null) ? resp.getDiscountAmount().intValue() : 0;
+        } catch (Exception e) {
+            throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
+        }
+    }
+
+    private Order saveOrder(OrderCreateRequest request, OrderCreateRequest.OrderCalculationResult result,
+                            String orderKey, String encryptedPassword, List<OrderItem> items) {
+        Order order = request.toEntity(result, orderKey, encryptedPassword);
+        items.forEach(order::addOrderItem);
+        if (request.getCouponId() != null) order.setCouponId(request.getCouponId());
+        return orderRepository.save(order);
+    }
+
+    private void saveDelivery(Order order, LocalDate requestDate) {
+        LocalDate date = (requestDate != null) ? requestDate : LocalDate.now().plusDays(DEFAULT_DELIVERY_DAYS);
+        deliveryRepository.save(Delivery.builder().order(order).requestDeliveryDate(date).estimatedDeliveryDate(date).build());
+    }
+
+    private void sendPointEarnMessage(Order order) {
+        rabbitTemplate.convertAndSend("point-queue", PointEarnRequest.builder().memberId(order.getUserId())
+                .eventType("EARN_ORDER").pureAmount(order.getPaymentAmount()).orderId(order.getId()).build());
+    }
+
+    private void finalizeExternalResources(Order order) {
+        List<Long> bookIds = order.getOrderItems().stream()
+                .flatMap(i -> Collections.nCopies(i.getQuantity(), i.getBookId()).stream()).toList();
+        bookClient.confirmStockDeduction(bookIds, order.getOrderKey());
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+            memberClient.confirmPoint(order.getUserId(), order.getPointDiscount(), order.getId());
+        }
+    }
+
+    private void processPreparingOrderCancellation(Order order) {
+        if (order.getPaymentKey() != null) paymentClient.cancelPayment(order.getPaymentKey(), new PaymentCancelRequest("취소", order.getPaymentAmount()));
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
+        if (order.getCouponId() != null) couponClient.cancelCouponUsage(order.getUserId(), new MemberCouponCancelRequest(order.getCouponId(), order.getId()));
+        bookClient.restoreStock(order.getOrderItems().stream().map(i -> new StockRequest(i.getBookId(), i.getQuantity())).toList(), order.getId() + "-restore");
+    }
+
+    private void processPaymentWaitingOrderCancellation(Order order) {
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) memberClient.cancelPoint(order.getUserId(), order.getPointDiscount(), order.getId());
+        bookClient.releaseHeldStock(order.getOrderItems().stream().map(OrderItem::getBookId).toList(), order.getOrderKey());
+    }
+
+    private void compensateTransaction(Long userId, Integer usedPoint, OrderCalculationData data, String orderKey) {
+        if (userId != null && usedPoint != null && usedPoint > 0) try { memberClient.cancelPoint(userId, usedPoint, 0L); } catch (Exception ignored) {}
+        if (data != null) try { bookClient.releaseHeldStock(data.tempOrderItems().stream().map(OrderItem::getBookId).toList(), orderKey); } catch (Exception ignored) {}
+    }
+
+    private String validateAndEncryptPassword(OrderCreateRequest request) {
+        if (request.getUserId() == null) {
+            if (request.getOrderPassword() == null || request.getOrderPassword().isBlank()) throw new OrderException(OrderErrorCode.ORDER_PASSWORD_REQUIRED);
+            return passwordEncoder.encode(request.getOrderPassword());
+        }
+        return null;
+    }
+
+    private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
+        ResponseEntity<List<BookInfoResponse>> resp = bookClient.getBooksBulk(items.stream().map(OrderCreateRequest.OrderItemRequest::getBookId).distinct().toList());
+        return Objects.requireNonNull(resp.getBody()).stream().collect(Collectors.toMap(BookInfoResponse::getBookId, Function.identity()));
+    }
+
+    private Map<Long, Wrapper> getWrapperMap(List<OrderCreateRequest.OrderItemRequest> items) {
+        Set<Long> ids = items.stream().map(OrderCreateRequest.OrderItemRequest::getWrapperId).filter(Objects::nonNull).collect(Collectors.toSet());
+        if (ids.isEmpty()) return Collections.emptyMap();
+        return wrapperRepository.findAllById(ids).stream().collect(Collectors.toMap(Wrapper::getId, Function.identity()));
+    }
+
+    private void tryClearCart(Long userId) { if (userId != null) try { cartClient.clearCart(userId); } catch (Exception ignored) {} }
+    private int calculateDeliveryFee(int productAmount, String address) { return deliveryService.calculateDeliveryFee(productAmount, address); }
+    private boolean isCancelable(DeliveryStatus status) { return status == DeliveryStatus.PREPARING || status == DeliveryStatus.PAYMENT_WAITING; }
 }
