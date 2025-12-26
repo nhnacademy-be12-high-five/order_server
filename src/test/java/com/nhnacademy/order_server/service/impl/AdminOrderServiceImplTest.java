@@ -234,7 +234,7 @@ class AdminOrderServiceImplTest {
             verify(memberClient).revertPoint(any(PointTransactionRequest.class));
 
             // 2. 적립 포인트 회수
-            verify(memberClient).deductPoint(eq(100L), eq(500));
+            verify(memberClient).deductPoint(eq(100L), eq(500), eq(1L));
         }
 
         @Test

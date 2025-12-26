@@ -345,6 +345,11 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderException(OrderErrorCode.ALREADY_PROCESSED);
         }
 
+        if (order.getDelivery() != null && order.getDelivery().getActualCompletionDate() == null) {
+            order.getDelivery().completeDelivery(); // Delivery 엔티티에 있는 메서드 호출 (날짜 = Now)
+            log.info("구매 확정으로 인한 배송 완료 처리: OrderID={}", orderId);
+        }
+
         // 구매 확정 처리
         order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
         log.info("주문 상태 업데이트 완료: orderId={}, newStatus={}", orderId, order.getDeliveryStatus());

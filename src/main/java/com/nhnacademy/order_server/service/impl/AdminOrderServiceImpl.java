@@ -1,9 +1,13 @@
 package com.nhnacademy.order_server.service.impl;
 
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
+import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
 import com.nhnacademy.order_server.dto.request.PointEarnRequest;
 import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
+import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderReturn;
@@ -13,6 +17,7 @@ import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.service.AdminOrderService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,6 +34,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final OrderRepository orderRepository;
     private final OrderReturnRepository orderReturnRepository;
     private final MemberClient memberClient;
+    private final CouponClient couponClient;
+    private final BookClient bookClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -144,7 +151,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
                         (long) order.getPointDiscount(),
                         order.getId()
                 );
-                memberClient.revertPoint(revertRequest);
+                // [수정] revertPoint 대신 새로 만든 revertPointForReturn 호출!
+                memberClient.revertPointForReturn(revertRequest);
             } catch (Exception e) {
                 log.error("사용 포인트 복구 실패: userId={}", order.getUserId());
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
@@ -154,10 +162,42 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
         if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
-                memberClient.deductPoint(order.getUserId(), order.getEarnedPoint());
+                memberClient.deductPoint(order.getUserId(), order.getEarnedPoint(), order.getId());
             } catch (Exception e) {
                 log.error("적립 포인트 회수 실패: userId={}", order.getUserId());
             }
+        }
+
+        // 쿠폰 복구
+        if (order.getCouponId() != null) {
+            try {
+                MemberCouponCancelRequest cancelReq =
+                        new MemberCouponCancelRequest(order.getCouponId(), order.getId());
+
+                couponClient.cancelCouponUsage(order.getUserId(), cancelReq);
+                log.info("반품으로 인한 쿠폰 복구 완료: couponId={}", order.getCouponId());
+
+            } catch (Exception e) {
+                // 쿠폰 복구 실패는 환불 전체를 막을 정도는 아님 -> 로그 남기고 진행
+                log.error("쿠폰 복구 실패 (수동 복구 필요): couponId={}, error={}", order.getCouponId(), e.getMessage());
+            }
+        }
+
+        try {
+            List<StockRequest> restoreRequests = order.getOrderItems().stream()
+                    .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
+                    .toList();
+
+            // 키 충돌 방지 및 구분을 위해 "-return" 접미사 사용 추천
+            String idempotencyKey = order.getId() + "-return";
+
+            bookClient.restoreStock(restoreRequests, idempotencyKey);
+            log.info("반품 재고 복구 완료: orderId={}", order.getId());
+
+        } catch (Exception e) {
+            // 재고 서버가 죽어서 복구가 안 되면, 반품 승인 자체를 롤백해야 데이터가 꼬이지 않음
+            log.error("재고 복구 실패 (반품 승인 중): OrderID={}", order.getId(), e);
+            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
         }
 
         // 4. 상태 변경
