@@ -2,6 +2,7 @@ package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.dto.request.OrderReturnRequest;
 import com.nhnacademy.order_server.dto.response.OrderReturnCheckResponse;
+import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderReturn;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
@@ -13,6 +14,7 @@ import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.service.OrderReturnService;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.EnumSet;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -111,19 +113,42 @@ public class OrderReturnServiceImpl implements OrderReturnService {
     }
 
     private void validateReturnPeriod(Order order, ReturnReason reason) {
-        if (order.getDelivery() == null || order.getDelivery().getActualShipDate() == null) {
-            throw new OrderException(OrderErrorCode.INVALID_ORDER_STATE);
+        // 상태 체크 (배송 완료 or 구매 확정)
+        if (!EnumSet.of(DeliveryStatus.DELIVERY_COMPLETED, DeliveryStatus.PURCHASE_CONFIRMED)
+                .contains(order.getDeliveryStatus())) {
+            throw new OrderException(OrderErrorCode.INVALID_DELIVERY_STATE);
         }
 
-        LocalDateTime shipmentDate = order.getDelivery().getActualShipDate();
-        long daysPassed = ChronoUnit.DAYS.between(shipmentDate, LocalDateTime.now());
+        // 기준일: 배송 완료일 (없으면 출고일)
+        Delivery delivery = order.getDelivery();
+        if (delivery == null) {
+            throw new OrderException(OrderErrorCode.INVALID_DELIVERY_STATE);
+        }
 
+        LocalDateTime baseDate = delivery.getActualCompletionDate();
+        if (baseDate == null) {
+            baseDate = delivery.getActualShipDate();
+        }
+        if (baseDate == null) {
+            throw new OrderException(OrderErrorCode.INVALID_DELIVERY_STATE);
+        }
+
+        // 경과일 계산 (배송 완료일 ~ 오늘)
+        long daysFromDelivery = java.time.temporal.ChronoUnit.DAYS.between(baseDate, LocalDateTime.now());
+
+        // 단순변심
         if (reason == ReturnReason.SIMPLE_CHANGE) {
-            if (daysPassed > 10) {
+            // 구매 확정 시점을 모르니 그냥 배송 완료 후 10일 이내면 다 받기
+            long limitDays = 10;
+
+            if (daysFromDelivery > limitDays) {
                 throw new OrderException(OrderErrorCode.RETURN_PERIOD_EXPIRED);
             }
-        } else {
-            if (daysPassed > 30) {
+        }
+        // 그 외 사유 (상품 불량 등)
+        else {
+            // 배송 완료 후 30일 이내
+            if (daysFromDelivery > 30) {
                 throw new OrderException(OrderErrorCode.RETURN_PERIOD_EXPIRED);
             }
         }

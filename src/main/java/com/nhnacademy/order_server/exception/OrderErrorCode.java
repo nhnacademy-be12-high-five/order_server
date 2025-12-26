@@ -18,7 +18,7 @@ public enum OrderErrorCode {
     PAYMENT_AMOUNT_MISMATCH(HttpStatus.BAD_REQUEST, "결제 금액이 일치하지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "유효하지 않은 요청입니다. 입력값을 확인해주세요."),
     NOT_ENOUGH_POINT(HttpStatus.BAD_REQUEST, "포인트가 부족합니다."),
-    INVALID_ORDER_STATE(HttpStatus.BAD_REQUEST, "유효하지 않은 주문 상태입니다."),
+    INVALID_DELIVERY_STATE(HttpStatus.BAD_REQUEST, "유효하지 않은 배송 상태입니다."),
 
     TRACKING_NUMBER_REQUIRED(HttpStatus.BAD_REQUEST, "운송장 번호는 필수입니다."),
     CANNOT_CHANGE_FINISHED_ORDER(HttpStatus.BAD_REQUEST, "이미 완료되거나 취소된 주문은 상태를 변경할 수 없습니다."),
