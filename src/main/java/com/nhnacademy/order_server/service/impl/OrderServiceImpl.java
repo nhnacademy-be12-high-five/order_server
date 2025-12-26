@@ -172,6 +172,12 @@ public class OrderServiceImpl implements OrderService {
             order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
         }
 
+        // 쿠폰 사용 확정
+        if (order.getCouponId() != null) {
+            MemberCouponUseRequest useReq = new MemberCouponUseRequest(request.getCouponId(), order.getId());
+            couponClient.useCoupon(order.getUserId(), useReq);
+        }
+
         // 포인트 예약
         if (userId != null && usedPoint > 0) {
             memberClient.reservePoint(userId, usedPoint, order.getId());
@@ -184,6 +190,7 @@ public class OrderServiceImpl implements OrderService {
         if (userId != null) {
             try {
                 cartClient.clearCart(userId);
+                log.warn("장바구니 비우기 성공 : userId={}", userId);
             } catch (Exception e) {
                 log.warn("장바구니 비우기 실패 (무시): userId={}", userId);
             }
@@ -195,7 +202,6 @@ public class OrderServiceImpl implements OrderService {
                 request.getOrderItems().size()
         );
     }
-
 
 
     @Override
@@ -314,6 +320,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
     }
+
     @Override
     @Transactional
     public void purchaseConfirm(Long orderId) {
@@ -363,7 +370,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
 
-
     // --- Private Methods ---
 
     private String validateAndEncryptPassword(OrderCreateRequest request) {
@@ -376,7 +382,8 @@ public class OrderServiceImpl implements OrderService {
         return null;
     }
 
-    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate, String orderKey) {
+    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate,
+                                                               String orderKey) {
         Map<Long, Wrapper> wrapperMap = getWrapperMap(request.getOrderItems());
         Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
 
@@ -392,9 +399,13 @@ public class OrderServiceImpl implements OrderService {
         for (OrderCreateRequest.OrderItemRequest itemReq : request.getOrderItems()) {
             Long bookId = itemReq.getBookId();
             BookInfoResponse bookInfo = bookInfoMap.get(bookId);
-            if (bookInfo == null) throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+            if (bookInfo == null) {
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+            }
 
-            if (firstBookTitle == null) firstBookTitle = bookInfo.getTitle();
+            if (firstBookTitle == null) {
+                firstBookTitle = bookInfo.getTitle();
+            }
 
             Long wrapperId = itemReq.getWrapperId();
             String key = bookId + ":" + (wrapperId != null ? wrapperId : "null");
@@ -409,7 +420,9 @@ public class OrderServiceImpl implements OrderService {
 
             if (wrapperId != null) {
                 Wrapper wrapper = wrapperMap.get(wrapperId);
-                if (wrapper == null) throw new OrderException(OrderErrorCode.WRAPPER_NOT_FOUND);
+                if (wrapper == null) {
+                    throw new OrderException(OrderErrorCode.WRAPPER_NOT_FOUND);
+                }
                 totalWrappingFee += wrapper.getWrapperPrice() * itemReq.getQuantity();
             }
         }
@@ -538,7 +551,8 @@ public class OrderServiceImpl implements OrderService {
 
         int usedPoint = (request.getUsedPoint() != null) ? request.getUsedPoint() : 0;
 
-        int finalPaymentAmount = Math.max(0, (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
+        int finalPaymentAmount = Math.max(0,
+                (data.totalProductAmount() + data.totalWrappingFee() + deliveryFee) - couponDiscount - usedPoint);
 
         return OrderCreateRequest.OrderCalculationResult.builder()
                 .productAmount(data.totalProductAmount())
@@ -555,6 +569,9 @@ public class OrderServiceImpl implements OrderService {
                             String orderKey, String encryptedPassword, List<OrderItem> items) {
         Order order = request.toEntity(result, orderKey, encryptedPassword);
         items.forEach(order::addOrderItem);
+        if (request.getCouponId() != null) {
+            order.setCouponId(request.getCouponId());
+        }
         return orderRepository.save(order);
     }
 
@@ -573,7 +590,8 @@ public class OrderServiceImpl implements OrderService {
         return OrderCreateResponse.from(order, firstBookTitle, totalItems);
     }
 
-    private void compensateTransaction(Long userId, int usedPoint, List<Long> heldStockBookIds, String orderKey, Exception originalException) {
+    private void compensateTransaction(Long userId, int usedPoint, List<Long> heldStockBookIds, String orderKey,
+                                       Exception originalException) {
         if (userId != null && usedPoint > 0) {
             try {
                 memberClient.cancelPoint(userId, usedPoint, 0L);
@@ -594,6 +612,7 @@ public class OrderServiceImpl implements OrderService {
 
     private void finalizeExternalResources(Order order) {
         List<String> failedOperations = new ArrayList<>();
+        log.info("final메서드 사용");
 
         // 1. 재고 확정
         try {
@@ -607,21 +626,6 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) {
             log.error("재고 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
             failedOperations.add("STOCK");
-        }
-
-        // 2. 쿠폰 사용 확정
-        if (order.getCouponId() != null) {
-            try {
-                MemberCouponUseRequest useReq = new MemberCouponUseRequest(
-                        order.getCouponId(),
-                        order.getId()
-                );
-                couponClient.useCoupon(order.getUserId(), useReq);
-
-            } catch (Exception e) {
-                log.error("쿠폰 사용 확정 실패: OrderID={}, Error={}", order.getId(), e.getMessage());
-                failedOperations.add("COUPON");
-            }
         }
 
         // 3. 포인트 차감 확정
@@ -747,7 +751,7 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
         return OrderValidationInfoResponse.from(order);
     }
-  
+
     @Override
     public Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable) {
         LocalDateTime threeMonthsAgo = LocalDateTime.now().minusMonths(3);
