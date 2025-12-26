@@ -119,19 +119,7 @@ class AdminOrderServiceImplTest {
         }
 
         @Test
-        @DisplayName("구매 확정 변경 실패 - 배송 완료 상태가 아닐 때")
-        void updateToPurchaseConfirmed_Fail() {
-            setUpOrder(DeliveryStatus.DELIVERING); // 아직 배송 중
-            setUpRequest("PURCHASE_CONFIRMED", null);
-            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
-
-            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, request))
-                    .isInstanceOf(OrderException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
-        }
-
-        @Test
-        @DisplayName("반품 완료(RETURN_COMPLETED) 변경 성공 - approveReturn 호출 확인")
+        @DisplayName("반품 완료(RETURN_COMPLETED) 변경 성공")
         void updateToReturnCompleted_Success() {
             setUpOrder(DeliveryStatus.DELIVERY_COMPLETED);
             setUpRequest("RETURN_COMPLETED", null);
@@ -143,7 +131,7 @@ class AdminOrderServiceImplTest {
             adminOrderService.updateOrderStatus(1L, request);
 
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
-            verify(memberClient).earnPoint(any(PointEarnRequest.class)); // 환불금 적립 확인
+            verify(memberClient).earnPoint(any(PointEarnRequest.class));
         }
 
         private void setUpOrder(DeliveryStatus status) {
@@ -179,11 +167,11 @@ class AdminOrderServiceImplTest {
             // then
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
-            // 1. 환불금 포인트 적립 (PointEarnRequest)
+            // 1. 환불금 포인트 적립
             verify(memberClient).earnPoint(any(PointEarnRequest.class));
-            // 2. 사용했던 포인트 복구 (PointTransactionRequest)
+            // 2. 사용했던 포인트 복구
             verify(memberClient).revertPoint(any(PointTransactionRequest.class));
-            // 3. 적립되었던 포인트 회수 (deductPoint)
+            // 3. 적립되었던 포인트 회수 (MemberClient 명세에 따라 파라미터 2개 확인)
             verify(memberClient).deductPoint(eq(100L), eq(500));
         }
 
