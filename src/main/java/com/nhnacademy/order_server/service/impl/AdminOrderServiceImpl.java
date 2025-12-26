@@ -151,7 +151,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
                         (long) order.getPointDiscount(),
                         order.getId()
                 );
-                memberClient.revertPoint(revertRequest);
+                // [수정] revertPoint 대신 새로 만든 revertPointForReturn 호출!
+                memberClient.revertPointForReturn(revertRequest);
             } catch (Exception e) {
                 log.error("사용 포인트 복구 실패: userId={}", order.getUserId());
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);

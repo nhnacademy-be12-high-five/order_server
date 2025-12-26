@@ -26,9 +26,11 @@ public interface MemberClient {
                      @RequestParam("amount") Integer amount,
                      @RequestParam("orderId") Long orderId);
 
-    // cancelPoint 대신 이걸 써야 확정된 주문에 사용했던 포인트 환불
     @PostMapping("/internal/points/revert")
     void revertPoint(@RequestBody PointTransactionRequest requestDto);
+
+    @PostMapping("/internal/points/return-revert")
+    void revertPointForReturn(@RequestBody PointTransactionRequest requestDto);
 
 
     @PostMapping("/api/members/{memberId}/point/reserve")
@@ -49,4 +51,5 @@ public interface MemberClient {
     void confirmPoint(@PathVariable("userId") Long userId,
                       @RequestParam("amount") Integer amount,
                       @RequestParam("orderId") Long orderId); // [추가] orderId 파라미터
+
 }
