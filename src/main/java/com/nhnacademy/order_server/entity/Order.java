@@ -80,6 +80,7 @@ public class Order {
     private String paymentKey;
 
     @Column(name = "coupon_id")
+    @Setter
     private Long couponId;
 
     @Column(name = "ord_pw")

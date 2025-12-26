@@ -8,6 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MemberCouponUseRequest {
-    private Long memberCouponId;
+    private Long couponId;
     private Long orderId;
 }
