@@ -22,7 +22,9 @@ public interface MemberClient {
 
     // 주문 확정으로 이미 받은 포인트를 환불시킴
     @PostMapping("/api/members/{userId}/point-deduct")
-    void deductPoint(@PathVariable("userId") Long userId, @RequestParam("amount") Integer amount);
+    void deductPoint(@PathVariable("userId") Long userId,
+                     @RequestParam("amount") Integer amount,
+                     @RequestParam("orderId") Long orderId);
 
     // cancelPoint 대신 이걸 써야 확정된 주문에 사용했던 포인트 환불
     @PostMapping("/internal/points/revert")
