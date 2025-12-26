@@ -25,6 +25,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -120,6 +123,19 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
     }
 
+    @Override
+    @Transactional
+    public void completeOldDeliveries() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
+
+        List<Order> deliveringOrders = orderRepository.findAllByDeliveryStatusAndOrderDateBefore(
+                DeliveryStatus.DELIVERING, threshold);
+
+        for (Order order : deliveringOrders) {
+            order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+        }
+    }
+
     private void approveReturn(Order order, OrderReturn orderReturn) {
         // 1. 결제 금액(현금/카드)을 포인트로 환불 (PG 취소 X -> 포인트 적립 O)
         int refundAmount = orderReturn.getRefundAmount(); // 반품비 제외된 최종 환불액
@@ -210,4 +226,6 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
         order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
     }
+
+
 }
