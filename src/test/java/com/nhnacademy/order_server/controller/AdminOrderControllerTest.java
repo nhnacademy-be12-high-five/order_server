@@ -18,26 +18,18 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc; // [1] Import 추가
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AdminOrderController.class)
 @AutoConfigureMockMvc(addFilters = false) // [2] 시큐리티 필터 비활성화 (401/403 에러 방지)
-@TestPropertySource(properties = {
-        "book.service.url=http://localhost:8081",
-        "coupon.service.url=http://localhost:8082",
-        "member.service.url=http://localhost:8083",
-        "cart.service.url=http://localhost:8084",
-        "payment.service.url=http://localhost:8085"
-})
 class AdminOrderControllerTest {
 
     @Autowired

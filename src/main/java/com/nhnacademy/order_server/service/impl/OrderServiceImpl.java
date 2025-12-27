@@ -1,19 +1,49 @@
 package com.nhnacademy.order_server.service.impl;
 
-import com.nhnacademy.order_server.adapter.*;
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CartClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
+import com.nhnacademy.order_server.adapter.MemberClient;
+import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
-import com.nhnacademy.order_server.dto.request.*;
-import com.nhnacademy.order_server.dto.response.*;
+import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
+import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
+import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
+import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.StockRequest;
+import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
+import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
+import com.nhnacademy.order_server.dto.response.OrderAggregationDto;
+import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
+import com.nhnacademy.order_server.dto.response.OrderResponse;
+import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
-import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
-import com.nhnacademy.order_server.entity.*;
+import com.nhnacademy.order_server.entity.Delivery;
+import com.nhnacademy.order_server.entity.Order;
+import com.nhnacademy.order_server.entity.OrderItem;
+import com.nhnacademy.order_server.entity.Wrapper;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
-import com.nhnacademy.order_server.repository.*;
+import com.nhnacademy.order_server.repository.DeliveryRepository;
+import com.nhnacademy.order_server.repository.OrderRepository;
+import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -21,17 +51,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -270,7 +293,7 @@ public class OrderServiceImpl implements OrderService {
         bookClient.holdStockBatch(stockRequests, orderKey);
         return OrderCalculationData.builder().tempOrderItems(finalOrderItems).totalProductAmount(totalAmount)
                 .totalWrappingFee(0).totalEarnedPoint((int)(totalAmount * earnRate))
-                .firstBookTitle(finalOrderItems.get(0).getBookTitle()).build();
+                .firstBookTitle(finalOrderItems.getFirst().getBookTitle()).build();
     }
 
     private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
