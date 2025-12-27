@@ -174,7 +174,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
 
         // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
-        if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED &&
+                order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
                 memberClient.deductPoint(order.getUserId(), order.getEarnedPoint(), order.getId());
             } catch (Exception e) {
