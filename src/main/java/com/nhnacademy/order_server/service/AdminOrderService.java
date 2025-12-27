@@ -9,6 +9,6 @@ public interface AdminOrderService {
 
     Page<OrderResponse> getOrders(Pageable pageable, String status);
     void updateOrderStatus(Long orderId, OrderStatusUpdateRequest request);
-
+    void completeOldDeliveries();
     void processReturn(Long returnId, boolean isApproved);
 }

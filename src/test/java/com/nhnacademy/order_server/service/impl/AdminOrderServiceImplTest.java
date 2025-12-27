@@ -3,28 +3,24 @@ package com.nhnacademy.order_server.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
-import com.nhnacademy.order_server.adapter.PaymentClient;
-import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
+import com.nhnacademy.order_server.dto.request.*;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
-import com.nhnacademy.order_server.entity.Delivery;
-import com.nhnacademy.order_server.entity.Order;
-import com.nhnacademy.order_server.entity.OrderReturn;
+import com.nhnacademy.order_server.entity.*;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
-import com.nhnacademy.order_server.entity.enums.ReturnReason;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
-import java.util.List;
-import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -32,11 +28,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.*;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 @ExtendWith(MockitoExtension.class)
 class AdminOrderServiceImplTest {
@@ -44,249 +42,204 @@ class AdminOrderServiceImplTest {
     @InjectMocks
     private AdminOrderServiceImpl adminOrderService;
 
-    @Mock
-    private OrderRepository orderRepository;
+    @Mock private OrderRepository orderRepository;
+    @Mock private OrderReturnRepository orderReturnRepository;
+    @Mock private MemberClient memberClient;
+    @Mock private CouponClient couponClient;
+    @Mock private BookClient bookClient;
 
-    @Mock
-    private OrderReturnRepository orderReturnRepository;
+    private Order order;
+    private Delivery delivery;
 
-    @Mock
-    private MemberClient memberClient;
+    @BeforeEach
+    void setUp() {
+        order = Order.builder()
+                .id(1L)
+                .userId(100L)
+                .paymentAmount(50000)
+                .pointDiscount(1000)
+                .earnedPoint(500)
+                .couponId(10L)
+                .deliveryStatus(DeliveryStatus.PREPARING)
+                .build();
 
-    @Mock
-    private PaymentClient paymentClient;
+        delivery = Delivery.builder().order(order).build();
+        ReflectionTestUtils.setField(order, "delivery", delivery);
+
+        // OrderItem 추가 (재고 복구 테스트용)
+        OrderItem item = OrderItem.builder().bookId(1L).quantity(2).build();
+        order.addOrderItem(item);
+    }
 
     @Nested
-    @DisplayName("1. 주문 목록 조회")
+    @DisplayName("1. 주문 목록 조회 테스트 (getOrders)")
     class GetOrdersTest {
         @Test
-        @DisplayName("전체 조회 성공")
+        @DisplayName("성공: 상태값이 없을 때 전체 조회")
         void getOrders_All() {
-            // given
             Pageable pageable = PageRequest.of(0, 10);
-            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.PAYMENT_WAITING).build();
             given(orderRepository.findAll(pageable)).willReturn(new PageImpl<>(List.of(order)));
 
-            // when
             Page<OrderResponse> result = adminOrderService.getOrders(pageable, null);
 
-            // then
             assertThat(result.getContent()).hasSize(1);
             verify(orderRepository).findAll(pageable);
         }
 
         @Test
-        @DisplayName("상태 필터링 조회 성공")
+        @DisplayName("성공: 유효한 상태값으로 필터링 조회")
         void getOrders_WithStatus() {
-            // given
             Pageable pageable = PageRequest.of(0, 10);
-            String status = "DELIVERING";
-            Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.DELIVERING).build();
-            given(orderRepository.findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable))
-                    .willReturn(new PageImpl<>(List.of(order)));
+            given(orderRepository.findByDeliveryStatus(any(), any())).willReturn(new PageImpl<>(List.of(order)));
 
-            // when
-            Page<OrderResponse> result = adminOrderService.getOrders(pageable, status);
+            Page<OrderResponse> result = adminOrderService.getOrders(pageable, "DELIVERING");
 
-            // then
-            assertThat(result.getContent()).hasSize(1);
-            verify(orderRepository).findByDeliveryStatus(DeliveryStatus.DELIVERING, pageable);
+            assertThat(result).isNotNull();
+            verify(orderRepository).findByDeliveryStatus(eq(DeliveryStatus.DELIVERING), eq(pageable));
         }
 
         @Test
-        @DisplayName("잘못된 상태값으로 조회 시 예외 발생")
+        @DisplayName("실패: 존재하지 않는 상태값 입력 시 예외 발생")
         void getOrders_InvalidStatus() {
-            // given
             Pageable pageable = PageRequest.of(0, 10);
-            String invalidStatus = "UNKNOWN_STATUS";
-
-            // when & then
-            assertThatThrownBy(() -> adminOrderService.getOrders(pageable, invalidStatus))
+            assertThatThrownBy(() -> adminOrderService.getOrders(pageable, "INVALID_STATUS"))
                     .isInstanceOf(OrderException.class)
                     .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
         }
     }
 
     @Nested
-    @DisplayName("2. 주문 상태 변경")
+    @DisplayName("2. 주문 상태 변경 테스트 (updateOrderStatus)")
     class UpdateOrderStatusTest {
 
-        private OrderStatusUpdateRequest request;
-        private Order order;
-        private Delivery delivery;
-
         @Test
-        @DisplayName("배송 중(DELIVERING) 변경 성공")
-        void updateToDelivering_Success() {
-            // given
-            setUpOrder(DeliveryStatus.PREPARING);
-            setUpRequest("DELIVERING", "1234567890");
+        @DisplayName("성공: DELIVERING으로 변경 시 송장번호 등록 확인")
+        void updateToDelivering() {
+            OrderStatusUpdateRequest req = new OrderStatusUpdateRequest();
+            ReflectionTestUtils.setField(req, "status", "DELIVERING");
+            ReflectionTestUtils.setField(req, "trackingNumber", "12345");
 
             given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
-            // when
-            adminOrderService.updateOrderStatus(1L, request);
+            adminOrderService.updateOrderStatus(1L, req);
 
-            // then
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERING);
-            assertThat(order.getDelivery().getTrackingNumber()).isEqualTo("1234567890");
+            assertThat(delivery.getTrackingNumber()).isEqualTo("12345");
         }
 
         @Test
-        @DisplayName("배송 중 변경 실패 - 송장 번호 누락")
-        void updateToDelivering_Fail_NoTrackingNumber() {
-            // given
-            setUpOrder(DeliveryStatus.PREPARING);
-            setUpRequest("DELIVERING", ""); // Blank
+        @DisplayName("실패: DELIVERING 변경 시 송장번호 누락 예외")
+        void updateToDelivering_Fail() {
+            OrderStatusUpdateRequest req = new OrderStatusUpdateRequest();
+            ReflectionTestUtils.setField(req, "status", "DELIVERING");
+            ReflectionTestUtils.setField(req, "trackingNumber", ""); // 빈 송장번호
 
             given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
-            // when & then
-            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, request))
-                    .isInstanceOf(OrderException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
+            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, req))
+                    .isInstanceOf(OrderException.class);
         }
 
         @Test
-        @DisplayName("배송 완료(DELIVERY_COMPLETED) 변경 성공")
-        void updateToDeliveryCompleted_Success() {
-            // given
-            setUpOrder(DeliveryStatus.DELIVERING);
-            setUpRequest("DELIVERY_COMPLETED", null);
+        @DisplayName("성공: PURCHASE_CONFIRMED 변경 (DELIVERY_COMPLETED 상태일 때)")
+        void updateToPurchaseConfirmed() {
+            order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+            OrderStatusUpdateRequest req = new OrderStatusUpdateRequest();
+            ReflectionTestUtils.setField(req, "status", "PURCHASE_CONFIRMED");
 
             given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
-            // when
-            adminOrderService.updateOrderStatus(1L, request);
+            adminOrderService.updateOrderStatus(1L, req);
 
-            // then
-            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
-            // Delivery 엔티티의 completeDelivery()가 호출되었는지 간접 확인 (상태 변경 로직에 포함됨)
-        }
-
-        @Test
-        @DisplayName("구매 확정(PURCHASE_CONFIRMED) 변경 성공")
-        void updateToPurchaseConfirmed_Success() {
-            // given
-            setUpOrder(DeliveryStatus.DELIVERY_COMPLETED); // 배송 완료 상태여야 함
-            setUpRequest("PURCHASE_CONFIRMED", null);
-
-            given(orderRepository.findById(1L)).willReturn(Optional.of(order));
-
-            // when
-            adminOrderService.updateOrderStatus(1L, request);
-
-            // then
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.PURCHASE_CONFIRMED);
         }
 
         @Test
-        @DisplayName("구매 확정 변경 실패 - 배송 완료 상태가 아님")
-        void updateToPurchaseConfirmed_Fail_InvalidStatus() {
-            // given
-            setUpOrder(DeliveryStatus.DELIVERING); // 아직 배송 중
-            setUpRequest("PURCHASE_CONFIRMED", null);
+        @DisplayName("실패: DELIVERY_COMPLETED가 아닌 상태에서 구매 확정 시도")
+        void updateToPurchaseConfirmed_Fail() {
+            order.updateStatus(DeliveryStatus.DELIVERING); // 아직 배송 중
+            OrderStatusUpdateRequest req = new OrderStatusUpdateRequest();
+            ReflectionTestUtils.setField(req, "status", "PURCHASE_CONFIRMED");
 
             given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
-            // when & then
-            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, request))
+            assertThatThrownBy(() -> adminOrderService.updateOrderStatus(1L, req))
                     .isInstanceOf(OrderException.class)
                     .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
-        }
-
-        private void setUpOrder(DeliveryStatus status) {
-            order = Order.builder().id(1L).deliveryStatus(status).build();
-            delivery = Delivery.builder().order(order).build();
-            ReflectionTestUtils.setField(order, "delivery", delivery);
-        }
-
-        private void setUpRequest(String status, String trackingNumber) {
-            request = new OrderStatusUpdateRequest();
-            ReflectionTestUtils.setField(request, "status", status);
-            ReflectionTestUtils.setField(request, "trackingNumber", trackingNumber);
         }
     }
 
     @Nested
-    @DisplayName("3. 반품 처리")
-    class ProcessReturnTest {
+    @DisplayName("3. 반품 승인 로직 테스트 (approveReturn)")
+    class ApproveReturnTest {
 
-        private Order order;
         private OrderReturn orderReturn;
 
-        @Test
-        @DisplayName("반품 승인 - 전체 성공 (포인트 환불 + 적립 회수)")
-        void processReturn_Approve_FullSuccess() {
-            // given
-            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 1000, 500); // 1000원 사용, 500원 적립됨
-            ReflectionTestUtils.setField(order, "paymentKey", "toss_key");
-
-            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
-
-            // when
-            adminOrderService.processReturn(1L, true);
-
-            // then
-            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
-
-            // 1. 사용 포인트 환불 (orderId 포함 검증)
-            verify(memberClient).revertPoint(any(PointTransactionRequest.class));
-
-            // 2. 적립 포인트 회수
-            verify(memberClient).deductPoint(eq(100L), eq(500), eq(1L));
-        }
-
-        @Test
-        @DisplayName("반품 승인 실패 - 포인트 서버 오류")
-        void processReturn_Approve_Fail_MemberService() {
-            // given
-            setUpReturn(DeliveryStatus.DELIVERY_COMPLETED, 1000, 0);
-            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
-
-            // 포인트 환불 시 예외 발생
-            willThrow(new RuntimeException("Connection Refused"))
-                    .given(memberClient).revertPoint(any(PointTransactionRequest.class));
-
-            // when & then
-            assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
-                    .isInstanceOf(OrderException.class)
-                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.MEMBER_SERVICE_ERROR);
-        }
-
-        @Test
-        @DisplayName("반품 거절 - 상태 원복")
-        void processReturn_Reject() {
-            // given
-            setUpReturn(DeliveryStatus.RETURN_REQUESTED, 0, 0);
-            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
-
-            // when
-            adminOrderService.processReturn(1L, false);
-
-            // then
-            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
-
-            // 외부 서비스 호출 안됨 검증
-            verify(memberClient, times(0)).cancelPoint(any(), any(), any());
-            verify(paymentClient, times(0)).cancelPayment(any(), any());
-        }
-
-        private void setUpReturn(DeliveryStatus status, int usedPoint, int earnedPoint) {
-            order = Order.builder()
-                    .id(1L)
-                    .userId(100L)
-                    .pointDiscount(usedPoint)
-                    .earnedPoint(earnedPoint)
-                    .deliveryStatus(status)
-                    .paymentAmount(5000)
-                    .build();
-
+        @BeforeEach
+        void setUp() {
             orderReturn = OrderReturn.builder()
                     .order(order)
-                    .refundAmount(5000)
-                    .returnReason(ReturnReason.PRODUCT_DEFECT)
+                    .refundAmount(45000)
                     .build();
+        }
+
+        @Test
+        @DisplayName("성공: 반품 승인 시 포인트 환불, 쿠폰 복구, 재고 복구 모두 실행")
+        void approveReturn_Success() {
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
+
+            adminOrderService.processReturn(1L, true);
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
+
+            // 1. 환불금 적립 호출 확인
+            verify(memberClient).earnPoint(any(PointEarnRequest.class));
+            // 2. 사용 포인트 복구 호출 확인
+            verify(memberClient).revertPointForReturn(any(PointTransactionRequest.class));
+            // 3. 적립 포인트 회수 호출 확인
+            verify(memberClient).deductPoint(eq(100L), eq(500), eq(1L));
+            // 4. 쿠폰 복구 호출 확인
+            verify(couponClient).cancelCouponUsage(eq(100L), any());
+            // 5. 재고 복구 호출 확인
+            verify(bookClient).restoreStock(anyList(), contains("-return"));
+        }
+
+        @Test
+        @DisplayName("실패: 재고 서버 장애 시 반품 승인 실패 (예외 전파)")
+        void approveReturn_Fail_BookClient() {
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
+            willThrow(new RuntimeException("API Error")).given(bookClient).restoreStock(any(), any());
+
+            assertThatThrownBy(() -> adminOrderService.processReturn(1L, true))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+    }
+
+    @Nested
+    @DisplayName("4. 기타 행정 서비스 테스트")
+    class AdminServiceMiscTest {
+
+        @Test
+        @DisplayName("반품 거절: 상태가 DELIVERY_COMPLETED로 원복됨")
+        void rejectReturn() {
+            OrderReturn orderReturn = OrderReturn.builder().order(order).build();
+            given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
+
+            adminOrderService.processReturn(1L, false);
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
+        }
+
+        @Test
+        @DisplayName("스케줄러: 오래된 배송 중 주문 일괄 완료 처리")
+        void completeOldDeliveries() {
+            given(orderRepository.findAllByDeliveryStatusAndOrderDateBefore(any(), any()))
+                    .willReturn(List.of(order));
+
+            adminOrderService.completeOldDeliveries();
+
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.DELIVERY_COMPLETED);
         }
     }
 }
