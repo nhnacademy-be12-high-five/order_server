@@ -9,4 +9,7 @@ public interface CartClient {
 
     @DeleteMapping("/api/cart/items")
     void clearCart(@RequestHeader("X-USER-ID") Long memberId);
+
+    @DeleteMapping("/items/immediately")
+    void clearCartForOrder(@RequestHeader(name = "X-USER-ID", required = false) Long memberId);
 }

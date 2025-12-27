@@ -17,6 +17,7 @@ import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.service.AdminOrderService;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,9 +25,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Slf4j
 @Service
@@ -176,7 +174,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
 
         // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
-        if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED &&
+                order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
                 memberClient.deductPoint(order.getUserId(), order.getEarnedPoint(), order.getId());
             } catch (Exception e) {

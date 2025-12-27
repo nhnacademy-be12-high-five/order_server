@@ -1,15 +1,18 @@
 package com.nhnacademy.order_server.controller;
 
-import com.nhnacademy.order_server.controller.swagger.InternalOrderControllerDocs; // 추가
+import com.nhnacademy.order_server.controller.swagger.InternalOrderControllerDocs;
 import com.nhnacademy.order_server.dto.response.OrderAggregationDto;
 import com.nhnacademy.order_server.service.OrderService;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDateTime;
-import java.util.List;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/internal/orders")
