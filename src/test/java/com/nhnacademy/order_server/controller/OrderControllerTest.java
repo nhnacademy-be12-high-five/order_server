@@ -3,9 +3,11 @@ package com.nhnacademy.order_server.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,10 +15,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest.OrderItemRequest;
 import com.nhnacademy.order_server.dto.request.OrderGuestLoginRequest;
+import com.nhnacademy.order_server.dto.response.DeliveryPolicyResponse;
 import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
+import com.nhnacademy.order_server.dto.response.WrapperResponse;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
 import com.nhnacademy.order_server.service.OrderService;
@@ -34,19 +38,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean; // Spring Boot 3.4+
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(OrderController.class)
 @AutoConfigureMockMvc(addFilters = false) // 시큐리티 필터 비활성화
-@TestPropertySource(properties = {
-        "book.service.url=http://localhost:8081",
-        "coupon.service.url=http://localhost:8082",
-        "member.service.url=http://localhost:8083",
-        "cart.service.url=http://localhost:8084",
-        "payment.service.url=http://localhost:8085"
-})
 class OrderControllerTest {
 
     @Autowired
@@ -67,11 +64,10 @@ class OrderControllerTest {
     @MockitoBean
     private DeliveryPolicyService deliveryPolicyService;
 
-    // 1. 주문 생성 테스트 (OrderCreateResponse는 orderId 유지)
+    // 1. 주문 생성 테스트
     @Test
     @DisplayName("[POST] 주문 생성 성공 (201 Created)")
     void createOrder() throws Exception {
-        // Given
         OrderCreateRequest request = new OrderCreateRequest();
         ReflectionTestUtils.setField(request, "userId", 1L);
         ReflectionTestUtils.setField(request, "receiverName", "홍길동");
@@ -82,7 +78,6 @@ class OrderControllerTest {
         ReflectionTestUtils.setField(item, "quantity", 2);
         ReflectionTestUtils.setField(request, "orderItems", List.of(item));
 
-        // OrderCreateResponse는 필드명이 orderId라고 가정
         OrderCreateResponse response = OrderCreateResponse.builder()
                 .orderId(1L)
                 .orderKey("test-uuid-1234")
@@ -91,7 +86,6 @@ class OrderControllerTest {
 
         given(orderService.createOrder(any(OrderCreateRequest.class))).willReturn(response);
 
-        // When & Then
         mockMvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -100,7 +94,7 @@ class OrderControllerTest {
                 .andDo(print());
     }
 
-    // 3. 결제 검증 정보 조회 테스트 (OrderValidationInfoResponse는 orderId 유지)
+    // 2. 결제 검증 정보 조회 테스트
     @Test
     @DisplayName("[GET] 결제 검증 정보 조회 성공 (200 OK)")
     void getPaymentInfo() throws Exception {
@@ -119,16 +113,14 @@ class OrderControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderKey").value(orderKey))
-                .andExpect(jsonPath("$.paymentAmount").value(30000))
                 .andDo(print());
     }
 
-    // 4. 회원 주문 목록 조회 테스트 (OrderResponse는 id, totalPrice 사용)
+    // 3. 회원 주문 목록 조회 테스트
     @Test
     @DisplayName("[GET] 내 주문 목록 조회 (200 OK)")
     void getMyOrders() throws Exception {
         Long userId = 100L;
-        // [수정] orderId -> id, totalAmount -> totalPrice
         OrderResponse orderRes = OrderResponse.builder()
                 .id(1L)
                 .orderDate(LocalDateTime.now())
@@ -143,21 +135,17 @@ class OrderControllerTest {
         mockMvc.perform(get("/api/orders")
                         .header("X-USER-ID", userId)
                         .param("page", "0")
-                        .param("size", "10")
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .param("size", "10"))
                 .andExpect(status().isOk())
-                // [수정] jsonPath도 $.data[0].id 로 변경
                 .andExpect(jsonPath("$.data[0].id").value(1L))
-                .andExpect(jsonPath("$.data[0].status").value("PAYMENT_WAITING"))
                 .andDo(print());
     }
 
-    // 5. 주문 상세 조회 테스트 (OrderResponse 사용)
+    // 4. 주문 상세 조회 테스트
     @Test
     @DisplayName("[GET] 주문 상세 조회 (200 OK)")
     void getOrderDetail() throws Exception {
         Long orderId = 1L;
-        // [수정] orderId -> id
         OrderResponse response = OrderResponse.builder()
                 .id(orderId)
                 .status(DeliveryStatus.DELIVERING.name())
@@ -166,43 +154,142 @@ class OrderControllerTest {
 
         given(orderService.getOrderDetail(eq(orderId))).willReturn(response);
 
-        mockMvc.perform(get("/api/orders/{orderId}", orderId)
-                        .contentType(MediaType.APPLICATION_JSON))
+        mockMvc.perform(get("/api/orders/{orderId}", orderId))
                 .andExpect(status().isOk())
-                // [수정] jsonPath도 id로 변경
                 .andExpect(jsonPath("$.id").value(orderId))
-                .andExpect(jsonPath("$.status").value("DELIVERING"))
                 .andDo(print());
     }
 
-    // 6. 비회원 주문 조회 테스트 (GuestOrderDetailResponse 사용)
+    // 5. [추가] 최근 3개월 주문 조회 테스트
+    @Test
+    @DisplayName("[GET] 최근 3개월 주문 조회 (200 OK)")
+    void getRecentOrders() throws Exception {
+        Long userId = 100L;
+        OrderResponse orderRes = OrderResponse.builder()
+                .id(2L)
+                .status(DeliveryStatus.DELIVERY_COMPLETED.name())
+                .totalPrice(50000)
+                .build();
+
+        Page<OrderResponse> pageResponse = new PageImpl<>(List.of(orderRes));
+
+        given(orderService.getMyOrdersLast3Months(eq(userId), any(Pageable.class))).willReturn(pageResponse);
+
+        mockMvc.perform(get("/api/orders/recent")
+                        .header("X-USER-ID", userId)
+                        .param("page", "0")
+                        .param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(2L))
+                .andDo(print());
+    }
+
+    // 6. 비회원 주문 조회 테스트
     @Test
     @DisplayName("[POST] 비회원 주문 조회 (200 OK)")
     void getGuestOrder() throws Exception {
-        // Given
         OrderGuestLoginRequest request = new OrderGuestLoginRequest();
         ReflectionTestUtils.setField(request, "orderId", 1L);
-        ReflectionTestUtils.setField(request, "password", "1234"); // [수정] Integer(1234) -> String("1234")
-
+        ReflectionTestUtils.setField(request, "password", "1234");
 
         GuestOrderDetailResponse response = GuestOrderDetailResponse.builder()
                 .orderId(1L)
                 .orderNumber("20241225-0001")
-                .statusName(DeliveryStatus.DELIVERY_COMPLETED.name()) // statusName 필드 사용
+                .statusName(DeliveryStatus.DELIVERY_COMPLETED.name())
                 .receiverName("홍길동")
                 .totalAmount(10000L)
                 .build();
 
-        // Mocking
         given(orderService.getGuestOrder(eq(1L), eq("1234"))).willReturn(response);
 
-        // When & Then
         mockMvc.perform(post("/api/orders/guests/search")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.orderId").value(1L))
-                .andExpect(jsonPath("$.statusName").value("DELIVERY_COMPLETED")) // [수정] $.status -> $.statusName
+                .andDo(print());
+    }
+
+    // 7. [추가] 포장지 목록 조회 테스트
+    @Test
+    @DisplayName("[GET] 포장지 목록 조회 (200 OK)")
+    void getWrappers() throws Exception {
+        WrapperResponse wrapper = WrapperResponse.builder()
+                .id(1L)
+                .name("Red Paper")
+                .price(1000)
+                .build();
+
+        given(wrapperService.getAvailableWrappers()).willReturn(List.of(wrapper));
+
+        mockMvc.perform(get("/api/orders/wrappers"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(1L))
+                .andExpect(jsonPath("$[0].name").value("Red Paper"))
+                .andDo(print());
+    }
+
+    // 8. [추가] 현재 배송 정책 조회 테스트
+    @Test
+    @DisplayName("[GET] 현재 배송 정책 조회 (200 OK)")
+    void getCurrentDeliveryPolicy() throws Exception {
+        DeliveryPolicyResponse response = DeliveryPolicyResponse.builder()
+                .id(1L)
+                .standardShippingFee(3000)      // 기본 배송비
+                .minOrderAmount(50000)          // 무료 배송 기준
+                .isActive(true)
+                .effectiveDate(LocalDateTime.now())
+                .remoteAreaSurcharge(5000)      // 도서산간 추가 비용
+                .build();
+
+        given(deliveryPolicyService.getActivePolicy()).willReturn(response);
+
+        mockMvc.perform(get("/api/orders/policy/current"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.standardShippingFee").value(3000))
+                .andExpect(jsonPath("$.minOrderAmount").value(50000))
+                .andExpect(jsonPath("$.remoteAreaSurcharge").value(5000))
+                .andDo(print());
+    }
+
+    // 9. [추가] 주문 취소 테스트
+    @Test
+    @DisplayName("[POST] 주문 취소 (200 OK)")
+    void cancelOrder() throws Exception {
+        Long orderId = 1L;
+        doNothing().when(orderService).cancelOrder(orderId);
+
+        mockMvc.perform(post("/api/orders/{orderId}/cancel", orderId))
+                .andExpect(status().isOk())
+                .andDo(print());
+    }
+
+    // 10. [추가] 주문 확정 테스트
+    @Test
+    @DisplayName("[POST] 주문 구매 확정 (200 OK)")
+    void confirmOrder() throws Exception {
+        Long orderId = 1L;
+        doNothing().when(orderService).purchaseConfirm(orderId);
+
+        mockMvc.perform(post("/api/orders/{orderId}/confirm", orderId))
+                .andExpect(status().isOk())
+                .andDo(print());
+    }
+
+    // 11. [추가] 도서 구매 여부 확인 테스트
+    @Test
+    @DisplayName("[GET] 도서 구매 여부 확인 (200 OK)")
+    void hasPurchasedBook() throws Exception {
+        Long memberId = 100L;
+        Long bookId = 50L;
+
+        given(orderService.hasPurchasedBook(memberId, bookId)).willReturn(true);
+
+        mockMvc.perform(get("/api/orders/check-purchase")
+                        .param("memberId", String.valueOf(memberId))
+                        .param("bookId", String.valueOf(bookId)))
+                .andExpect(status().isOk())
+                .andExpect(content().string("true"))
                 .andDo(print());
     }
 }

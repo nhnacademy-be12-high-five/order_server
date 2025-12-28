@@ -25,6 +25,7 @@ import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
+import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import com.nhnacademy.order_server.entity.Wrapper;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -67,6 +69,7 @@ class OrderServiceImplTest {
     @Mock private MemberClient memberClient;
     @Mock private PaymentClient paymentClient;
     @Mock private DeliveryRepository deliveryRepository;
+    @Mock private RabbitTemplate rabbitTemplate;
 
     private OrderCreateRequest request;
     private Wrapper mockWrapper;
@@ -218,6 +221,27 @@ class OrderServiceImplTest {
                     .isInstanceOf(OrderException.class)
                     .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.INVALID_REQUEST);
         }
+        @Test
+        @DisplayName("무시: 이미 처리된 주문(결제 대기 상태가 아님)은 메시지를 무시한다")
+        void ignore_AlreadyProcessed() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.PREPARING) // 이미 결제 됨
+                    .build();
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            PaymentSuccessMessage message = PaymentSuccessMessage.builder().orderId(orderId).build();
+
+            // When
+            orderService.processPaymentSuccessMessage(message);
+
+            // Then
+            // 상태가 변하지 않았어야 함
+            verify(couponClient, org.mockito.Mockito.never()).useCoupon(anyLong(), any());
+        }
     }
 
     @Nested
@@ -285,6 +309,126 @@ class OrderServiceImplTest {
 
             orderService.getMyOrders(100L, pageable);
             verify(orderRepository).findAllByUserId(eq(100L), eq(pageable));
+        }
+    }
+    @Nested
+    @DisplayName("6. 구매 확정 (PurchaseConfirm)")
+    class PurchaseConfirmTest {
+
+        @Test
+        @DisplayName("성공: 구매 확정 시 포인트 적립 메시지 발행 및 상태 변경")
+        void success_Confirm() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .userId(100L)
+                    .paymentAmount(10000)
+                    .deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED)
+                    .build();
+
+            // 배송 정보가 있지만 완료일이 없는 경우 테스트
+            Delivery delivery = Delivery.builder().order(order).build();
+            ReflectionTestUtils.setField(order, "delivery", delivery);
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            // When
+            orderService.purchaseConfirm(orderId);
+
+            // Then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.PURCHASE_CONFIRMED);
+            assertThat(delivery.getActualCompletionDate()).isNotNull(); // 배송 완료일 자동 기입 확인
+
+            // 포인트 적립 큐 메시지 전송 확인
+            verify(rabbitTemplate).convertAndSend(eq("point-queue"), any(com.nhnacademy.order_server.dto.request.PointEarnRequest.class));
+        }
+
+        @Test
+        @DisplayName("실패: 이미 구매 확정된 주문은 예외 발생")
+        void fail_AlreadyConfirmed() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.PURCHASE_CONFIRMED)
+                    .build();
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            // When & Then
+            assertThatThrownBy(() -> orderService.purchaseConfirm(orderId))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("실패: 취소/반품된 주문은 구매 확정 불가")
+        void fail_CanceledOrReturned() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.RETURN_COMPLETED)
+                    .build();
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            // When & Then
+            assertThatThrownBy(() -> orderService.purchaseConfirm(orderId))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.ALREADY_PROCESSED);
+        }
+    }
+
+    @Nested
+    @DisplayName("7. 주문 취소 (CancelOrder) - 추가 케이스")
+    class CancelOrderExtendedTest {
+
+        @Test
+        @DisplayName("성공: 결제 대기(PAYMENT_WAITING) 상태 취소 - 단순 재고 선점 해제")
+        void cancel_PaymentWaiting() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .userId(100L)
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+                    .orderKey("key-123")
+                    .pointDiscount(1000)
+                    .build();
+            // 아이템 세팅
+            order.addOrderItem(OrderItem.builder().bookId(1L).quantity(1).build());
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            // When
+            orderService.cancelOrder(orderId);
+
+            // Then
+            assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.CANCELED);
+            // 선점 해제(release)가 호출되어야 함 (restore 아님)
+            verify(bookClient).releaseHeldStock(anyList(), eq("key-123"));
+            // 포인트 취소 호출 확인
+            verify(memberClient).cancelPoint(eq(100L), eq(1000), eq(orderId));
+        }
+
+        @Test
+        @DisplayName("실패: 배송 시작(DELIVERING)된 주문은 취소 불가")
+        void fail_CannotCancel() {
+            // Given
+            Long orderId = 1L;
+            Order order = Order.builder()
+                    .id(orderId)
+                    .deliveryStatus(DeliveryStatus.DELIVERING)
+                    .build();
+
+            given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
+
+            // When & Then
+            assertThatThrownBy(() -> orderService.cancelOrder(orderId))
+                    .isInstanceOf(OrderException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.CANNOT_CANCEL_ORDER);
         }
     }
 }

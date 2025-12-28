@@ -192,6 +192,8 @@ class AdminOrderServiceImplTest {
         @Test
         @DisplayName("성공: 반품 승인 시 포인트 환불, 쿠폰 복구, 재고 복구 모두 실행")
         void approveReturn_Success() {
+            order.updateStatus(DeliveryStatus.PURCHASE_CONFIRMED);
+
             given(orderReturnRepository.findByIdWithOrder(1L)).willReturn(Optional.of(orderReturn));
 
             adminOrderService.processReturn(1L, true);
