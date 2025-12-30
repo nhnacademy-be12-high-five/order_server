@@ -1,17 +1,13 @@
 package com.nhnacademy.order_server.service.impl;
 
 import com.nhnacademy.order_server.adapter.BookClient;
-import com.nhnacademy.order_server.adapter.CartClient;
 import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
-import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
-import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
 import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
 import com.nhnacademy.order_server.dto.request.PointEarnRequest;
 import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
@@ -21,19 +17,16 @@ import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
-import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import com.nhnacademy.order_server.entity.Wrapper;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
 import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
-import com.nhnacademy.order_server.repository.DeliveryRepository;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import com.nhnacademy.order_server.service.OrderService;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -47,13 +40,10 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
@@ -63,19 +53,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
-    private final DeliveryRepository deliveryRepository;
     private final WrapperRepository wrapperRepository;
     private final DeliveryService deliveryService;
     private final BookClient bookClient;
     private final CouponClient couponClient;
     private final MemberClient memberClient;
-    private final CartClient cartClient;
-    private final PaymentClient paymentClient;
-    private final PasswordEncoder passwordEncoder;
     private final RabbitTemplate rabbitTemplate;
-
-    @Autowired @Lazy private OrderService self;
-    private static final int DEFAULT_DELIVERY_DAYS = 2;
+    private final PasswordEncoder passwordEncoder;
+    private final OrderCreateService orderCreateService;
+    private final OrderCancelService orderCancelService;
 
     // =====================================================================================
     // 1. CREATE
@@ -90,31 +76,13 @@ public class OrderServiceImpl implements OrderService {
         OrderCreateRequest.OrderCalculationResult result = calculateFinalAmounts(request, orderData, deliveryFee);
 
         try {
-            return self.createOrderTransactional(request, orderKey, orderData, result);
+            return orderCreateService.createOrderInTransaction(request, orderKey, orderData, result);
         } catch (Exception e) {
             compensateTransaction(request.getUserId(), request.getUsedPoint(), orderData, orderKey);
             throw e;
         }
     }
 
-    @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public OrderCreateResponse createOrderTransactional(OrderCreateRequest request, String orderKey,
-                                                         OrderCalculationData orderData,
-                                                         OrderCreateRequest.OrderCalculationResult result) {
-        String encryptedPassword = validateAndEncryptPassword(request);
-        Order order = saveOrder(request, result, orderKey, encryptedPassword, orderData.tempOrderItems());
-        order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
-
-        if (request.getUserId() != null && request.getUsedPoint() > 0) {
-            memberClient.reservePoint(request.getUserId(), request.getUsedPoint(), order.getId());
-        }
-
-        saveDelivery(order, request.getRequestDeliveryDate());
-        tryClearCart(request.getUserId());
-
-        return OrderCreateResponse.from(order, orderData.firstBookTitle(), request.getOrderItems().size());
-    }
 
     // =====================================================================================
     // 2. READ
@@ -228,17 +196,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public void cancelOrder(Long orderId) {
-        self.cancelOrderTransactional(orderId);
-    }
-
-    @Override
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void cancelOrderTransactional(Long orderId) {
-        Order order = orderRepository.findById(orderId).orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-        if (!isCancelable(order.getDeliveryStatus())) throw new OrderException(OrderErrorCode.CANNOT_CANCEL_ORDER);
-        if (order.getDeliveryStatus() == DeliveryStatus.PREPARING) processPreparingOrderCancellation(order);
-        else processPaymentWaitingOrderCancellation(order);
-        order.updateStatus(DeliveryStatus.CANCELED);
+        orderCancelService.cancelOrderTransactional(orderId);
     }
 
     @Override
@@ -313,18 +271,6 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) { throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR); }
     }
 
-    private Order saveOrder(OrderCreateRequest request, OrderCreateRequest.OrderCalculationResult res, String key, String pwd, List<OrderItem> items) {
-        Order o = request.toEntity(res, key, pwd);
-        items.forEach(o::addOrderItem);
-        if (request.getCouponId() != null) o.setCouponId(request.getCouponId());
-        return orderRepository.save(o);
-    }
-
-    private void saveDelivery(Order o, LocalDate date) {
-        LocalDate d = date != null ? date : LocalDate.now().plusDays(DEFAULT_DELIVERY_DAYS);
-        deliveryRepository.save(Delivery.builder().order(o).requestDeliveryDate(d).estimatedDeliveryDate(d).build());
-    }
-
     private void sendPointEarnMessage(Order o) {
         PointEarnRequest pointRequest = PointEarnRequest.builder()
                 .memberId(o.getUserId())
@@ -341,13 +287,6 @@ public class OrderServiceImpl implements OrderService {
         if (o.getPointDiscount() != null && o.getPointDiscount() > 0) memberClient.confirmPoint(o.getUserId(), o.getPointDiscount(), o.getId());
     }
 
-    private void processPreparingOrderCancellation(Order o) {
-        if (o.getPaymentKey() != null) paymentClient.cancelPayment(o.getPaymentKey(), new PaymentCancelRequest("취소", o.getPaymentAmount()));
-        if (o.getPointDiscount() != null && o.getPointDiscount() > 0) memberClient.cancelPoint(o.getUserId(), o.getPointDiscount(), o.getId());
-        if (o.getCouponId() != null) couponClient.cancelCouponUsage(o.getUserId(), new MemberCouponCancelRequest(o.getCouponId(), o.getId()));
-        bookClient.restoreStock(o.getOrderItems().stream().map(i -> new StockRequest(i.getBookId(), i.getQuantity())).toList(), o.getId() + "-restore");
-    }
-
     private void processPaymentWaitingOrderCancellation(Order o) {
         if (o.getPointDiscount() != null && o.getPointDiscount() > 0) memberClient.cancelPoint(o.getUserId(), o.getPointDiscount(), o.getId());
         bookClient.releaseHeldStock(o.getOrderItems().stream().map(OrderItem::getBookId).toList(), o.getOrderKey());
@@ -356,14 +295,6 @@ public class OrderServiceImpl implements OrderService {
     private void compensateTransaction(Long uid, Integer point, OrderCalculationData data, String key) {
         if (uid != null && point != null && point > 0) try { memberClient.cancelPoint(uid, point, 0L); } catch (Exception ignored) {}
         if (data != null) try { bookClient.releaseHeldStock(data.tempOrderItems().stream().map(OrderItem::getBookId).toList(), key); } catch (Exception ignored) {}
-    }
-
-    private String validateAndEncryptPassword(OrderCreateRequest r) {
-        if (r.getUserId() == null) {
-            if (r.getOrderPassword() == null || r.getOrderPassword().isBlank()) throw new OrderException(OrderErrorCode.ORDER_PASSWORD_REQUIRED);
-            return passwordEncoder.encode(r.getOrderPassword());
-        }
-        return null;
     }
 
     private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
@@ -377,7 +308,7 @@ public class OrderServiceImpl implements OrderService {
         return wrapperRepository.findAllById(ids).stream().collect(Collectors.toMap(Wrapper::getId, Function.identity()));
     }
 
-    private void tryClearCart(Long uid) { if (uid != null) try { cartClient.clearCart(uid); } catch (Exception ignored) {} }
-    private int calculateDeliveryFee(int amount, String addr) { return deliveryService.calculateDeliveryFee(amount, addr); }
-    private boolean isCancelable(DeliveryStatus s) { return s == DeliveryStatus.PREPARING || s == DeliveryStatus.PAYMENT_WAITING; }
+    private int calculateDeliveryFee(int amount, String addr) {
+        return deliveryService.calculateDeliveryFee(amount, addr);
+    }
 }

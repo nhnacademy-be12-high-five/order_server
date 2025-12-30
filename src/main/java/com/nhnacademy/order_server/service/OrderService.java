@@ -1,6 +1,5 @@
 package com.nhnacademy.order_server.service;
 
-import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
@@ -17,12 +16,12 @@ public interface OrderService {
 
     OrderCreateResponse createOrder(OrderCreateRequest request);
 
-    OrderCreateResponse createOrderTransactional(
+    /*OrderCreateResponse createOrderTransactional(
             OrderCreateRequest request,
             String orderKey,
             OrderCalculationData orderData,
             OrderCreateRequest.OrderCalculationResult calculationResult
-    );
+    );*/
 
     OrderValidationInfoResponse getValidationInfo(String orderKey);
 
@@ -46,7 +45,7 @@ public interface OrderService {
 
     void cancelOrder(Long orderId);
 
-    void cancelOrderTransactional(Long orderId);
+   // void cancelOrderTransactional(Long orderId);
 
     void autoCompleteDelivery();
 
