@@ -1,34 +1,38 @@
 package com.nhnacademy.order_server.adapter;
 
+import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.external.BookInfoResponse;
-import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @FeignClient(name = "TEAM5-BOOK-SERVER")
 public interface BookClient {
 
-    @GetMapping("/api/books/{bookId}/info")
-    BookInfoResponse getBookInfo(@PathVariable("bookId") Long bookId);
+    @PostMapping("/api/books/bulk")
+    ResponseEntity<List<BookInfoResponse>> getBooksBulk(@RequestBody List<Long> bookIds);
 
-    @PostMapping("/api/books/{bookId}/stock/hold")
-    void holdStock(@PathVariable("bookId") Long bookId,
-                   @RequestParam("quantity") Integer quantity,
-                   @RequestHeader("Idempotency-Key") String idempotencyKey);
+    // 재고 선점 (Batch)
+    @PostMapping("/api/books/stock/hold/batch")
+    ResponseEntity<Void> holdStockBatch(@RequestBody List<StockRequest> requests,
+                                        @RequestParam("orderKey") String orderKey);
 
+    // 재고 확정 (Confirm)
     @PostMapping("/api/books/stock/confirm-deduction")
-    void confirmStockDeduction(@RequestBody List<Long> bookIds);
+    ResponseEntity<Void> confirmStockDeduction(@RequestBody List<Long> bookIds,
+                                               @RequestParam("orderKey") String orderKey);
 
-    @PostMapping("/api/books/release-stock")
-    void releaseHeldStock(@RequestBody List<Long> bookIds);
-
-    @PostMapping("/api/books/batch-info")
-    List<BookInfoResponse> getBookInfoBatch(@RequestBody List<Long> bookIds);
-
+    // 재고 복구 (Cancel/Refund)
     @PostMapping("/api/books/stock/restore")
-    void restoreStock(@RequestBody List<Long> bookIds, @RequestHeader("Idempotency-Key") String idempotencyKey);
+    ResponseEntity<Void> restoreStock(@RequestBody List<StockRequest> requests,
+                                      @RequestHeader("Idempotency-Key") String idempotencyKey);
 
-    @PostMapping("/api/books/{bookId}/best-seller")
-    void processPurchase(@PathVariable("bookId") Long bookId, @RequestBody Integer quantity);
+    // 단순 선점 해제 (Try Cancel)
+    @PostMapping("/api/books/release-stock")
+    ResponseEntity<Void> releaseHeldStock(@RequestBody List<Long> bookIds,
+                                          @RequestParam("orderKey") String orderKey);
 }

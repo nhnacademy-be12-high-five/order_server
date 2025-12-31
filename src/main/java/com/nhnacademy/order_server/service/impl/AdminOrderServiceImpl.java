@@ -1,9 +1,13 @@
 package com.nhnacademy.order_server.service.impl;
 
+import com.nhnacademy.order_server.adapter.BookClient;
+import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
-import com.nhnacademy.order_server.adapter.PaymentClient;
+import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PaymentCancelRequest;
+import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
+import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderReturn;
@@ -13,6 +17,8 @@ import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import com.nhnacademy.order_server.repository.OrderReturnRepository;
 import com.nhnacademy.order_server.service.AdminOrderService;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,7 +35,8 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private final OrderRepository orderRepository;
     private final OrderReturnRepository orderReturnRepository;
     private final MemberClient memberClient;
-    private final PaymentClient paymentClient; // [추가] 결제 서비스 클라이언트 주입
+    private final CouponClient couponClient;
+    private final BookClient bookClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -60,22 +67,41 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             throw new OrderException(OrderErrorCode.INVALID_REQUEST);
         }
 
-        // [핵심] 배송 시작(DELIVERING) 시점에만 송장 번호 필수 체크
+        if (newStatus == DeliveryStatus.RETURN_COMPLETED) {
+            // 해당 주문의 반품 요청 정보를 찾음
+            OrderReturn orderReturn = orderReturnRepository.findByOrderId(orderId)
+                    .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
+
+            // 기존에 만들어둔 환불 승인 로직(approveReturn)을 호출
+            approveReturn(order, orderReturn);
+
+            // approveReturn 내부에서 status 업데이트를 하므로 여기서 리턴
+            return;
+        }
+
+        // 1. 배송 중 (DELIVERING)
         if (newStatus == DeliveryStatus.DELIVERING) {
-            // 송장 번호 유효성 검증 (빈 문자열 체크)
             if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // "운송장 번호는 필수입니다" 등의 메시지 필요
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
             }
 
-            // 배송 정보 업데이트 (Entity 메서드 호출)
             if (order.getDelivery() != null) {
                 order.getDelivery().startDelivery(request.getTrackingNumber());
             }
         }
-        else if (newStatus == DeliveryStatus.COMPLETED) {
+        // 2. 배송 완료 (DELIVERY_COMPLETED) [변경됨]
+        else if (newStatus == DeliveryStatus.DELIVERY_COMPLETED) {
             if (order.getDelivery() != null) {
                 order.getDelivery().completeDelivery();
             }
+        }
+        // 3. 구매 확정 (PURCHASE_CONFIRMED) [추가됨]
+        else if (newStatus == DeliveryStatus.PURCHASE_CONFIRMED) {
+            // 배송 완료 상태에서만 구매 확정 가능하도록 제약
+            if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // "배송 완료된 주문만 구매 확정할 수 있습니다."
+            }
+            // (옵션) 여기서 포인트 적립 로직을 호출하거나, OrderServiceImpl의 confirmPurchase 로직을 재사용할 수 있음
         }
 
         order.updateStatus(newStatus);
@@ -83,7 +109,6 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
     @Override
     public void processReturn(Long returnId, boolean isApproved) {
-        // OrderReturn ID는 Order ID와 동일하게 매핑됨 (@MapsId)
         OrderReturn orderReturn = orderReturnRepository.findByIdWithOrder(returnId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
 
@@ -96,52 +121,110 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
     }
 
-    private void approveReturn(Order order, OrderReturn orderReturn) {
-        // 1. 주문 상태 변경 (반품 완료)
-        order.updateStatus(DeliveryStatus.RETURN);
+    @Override
+    @Transactional
+    public void completeOldDeliveries() {
+        LocalDateTime threshold = LocalDateTime.now().minusDays(3);
 
-        // 2. 포인트 환불 처리 (결제 시 사용했던 포인트 돌려주기)
-        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
+        List<Order> deliveringOrders = orderRepository.findAllByDeliveryStatusAndOrderDateBefore(
+                DeliveryStatus.DELIVERING, threshold);
+
+        for (Order order : deliveringOrders) {
+            order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+        }
+    }
+
+    private void approveReturn(Order order, OrderReturn orderReturn) {
+        // 1. 결제 금액(현금/카드)을 포인트로 환불 (PG 취소 X -> 포인트 적립 O)
+        int refundAmount = orderReturn.getRefundAmount(); // 반품비 제외된 최종 환불액
+
+        if (refundAmount > 0) {
             try {
-                // reservePoint: 사용했던 포인트를 유저에게 다시 적립(환불)
-                memberClient.reservePoint(order.getUserId(), order.getPointDiscount());
+                PointEarnRequest earnRequest = PointEarnRequest.builder()
+                        .memberId(order.getUserId())
+                        .eventType("EARN_REFUND")
+                        .pureAmount(refundAmount)
+                        .orderId(order.getId())
+                        .build();
+
+                memberClient.earnPoint(earnRequest);
+
+                log.info("반품 환불금 포인트 적립 완료: userId={}, amount={}", order.getUserId(), refundAmount);
+
             } catch (Exception e) {
-                log.error("포인트 환불 연동 실패: userId={}, amount={}", order.getUserId(), order.getPointDiscount());
-                // 포인트 서버 오류 시 전체 로직 롤백을 위해 예외 발생
+                log.error("반품 포인트 적립 실패: userId={}, amount={}", order.getUserId(), refundAmount);
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
             }
         }
 
-        // 3. 적립된 포인트 회수 (구매 확정으로 지급된 포인트 차감)
-        if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
+        // 2. 사용했던 포인트 복구 (주문 시 포인트를 썼다면)
+        if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
-                // deductPoint: 지급된 포인트 회수
-                memberClient.deductPoint(order.getUserId(), order.getEarnedPoint());
+                PointTransactionRequest revertRequest = new PointTransactionRequest(
+                        order.getUserId(),
+                        (long) order.getPointDiscount(),
+                        order.getId()
+                );
+                // [수정] revertPoint 대신 새로 만든 revertPointForReturn 호출!
+                memberClient.revertPointForReturn(revertRequest);
             } catch (Exception e) {
-                // 이미 사용해서 잔액이 부족한 경우 등 실패할 수 있음.
-                // 정책에 따라 예외를 던지지 않고 로그만 남기고 진행 (고객 귀책이 아니거나, 마이너스 포인트 허용 정책 등에 따라 다름)
-                log.error("적립 포인트 회수 실패: userId={}, amount={}", order.getUserId(), order.getEarnedPoint());
+                log.error("사용 포인트 복구 실패: userId={}", order.getUserId());
+                throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
             }
         }
 
-        // 4. [구현됨] 결제 금액(PG) 환불 로직
-        int refundAmount = orderReturn.getRefundAmount();
-
-        // 환불할 금액이 있고, PG사 결제 키가 존재하는 경우 실행
-        if (refundAmount > 0 && order.getPaymentKey() != null) {
+        // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
+        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED &&
+                order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
-                PaymentCancelRequest cancelRequest = new PaymentCancelRequest("관리자 반품 승인", refundAmount);
-                paymentClient.cancelPayment(order.getPaymentKey(), cancelRequest);
+                memberClient.deductPoint(order.getUserId(), order.getEarnedPoint(), order.getId());
             } catch (Exception e) {
-                log.error("PG 결제 취소 연동 실패: paymentKey={}, amount={}, error={}", order.getPaymentKey(), refundAmount, e.getMessage());
-                // PG 환불 실패는 심각한 문제이므로 예외를 발생시켜 트랜잭션을 롤백해야 함
-                throw new OrderException(OrderErrorCode.EXTERNAL_API_ERROR);
+                log.error("적립 포인트 회수 실패: userId={}", order.getUserId());
             }
         }
+
+        // 쿠폰 복구
+        if (order.getCouponId() != null) {
+            try {
+                MemberCouponCancelRequest cancelReq =
+                        new MemberCouponCancelRequest(order.getCouponId(), order.getId());
+
+                couponClient.cancelCouponUsage(order.getUserId(), cancelReq);
+                log.info("반품으로 인한 쿠폰 복구 완료: couponId={}", order.getCouponId());
+
+            } catch (Exception e) {
+                // 쿠폰 복구 실패는 환불 전체를 막을 정도는 아님 -> 로그 남기고 진행
+                log.error("쿠폰 복구 실패 (수동 복구 필요): couponId={}, error={}", order.getCouponId(), e.getMessage());
+            }
+        }
+
+        try {
+            List<StockRequest> restoreRequests = order.getOrderItems().stream()
+                    .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
+                    .toList();
+
+            // 키 충돌 방지 및 구분을 위해 "-return" 접미사 사용 추천
+            String idempotencyKey = order.getId() + "-return";
+
+            bookClient.restoreStock(restoreRequests, idempotencyKey);
+            log.info("반품 재고 복구 완료: orderId={}", order.getId());
+
+        } catch (Exception e) {
+            // 재고 서버가 죽어서 복구가 안 되면, 반품 승인 자체를 롤백해야 데이터가 꼬이지 않음
+            log.error("재고 복구 실패 (반품 승인 중): OrderID={}", order.getId(), e);
+            throw new OrderException(OrderErrorCode.EXTERNAL_SERVICE_ERROR);
+        }
+
+        // 4. 상태 변경
+        order.updateStatus(DeliveryStatus.RETURN_COMPLETED);
     }
 
     private void rejectReturn(Order order) {
-        // 반품 거절 시, 상태를 다시 '배송 완료' 상태로 원복하여 정상 주문으로 처리
-        order.updateStatus(DeliveryStatus.COMPLETED);
+        // 반품 거절 시: 배송 완료 상태로 원복 (COMPLETED -> DELIVERY_COMPLETED) [변경됨]
+        // 상황에 따라 구매 확정(PURCHASE_CONFIRMED)으로 돌려야 할 수도 있음 (정책 결정 필요)
+
+        order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
     }
+
+
 }

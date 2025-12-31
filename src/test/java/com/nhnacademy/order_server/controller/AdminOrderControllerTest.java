@@ -1,25 +1,8 @@
 package com.nhnacademy.order_server.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.response.OrderResponse;
-import com.nhnacademy.order_server.service.AdminOrderService;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.List;
-
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,14 +10,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
+import com.nhnacademy.order_server.dto.response.OrderResponse;
+import com.nhnacademy.order_server.service.AdminOrderService;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
+
 @WebMvcTest(AdminOrderController.class)
-@TestPropertySource(properties = {
-        "book.service.url=http://localhost:8081",
-        "coupon.service.url=http://localhost:8082",
-        "member.service.url=http://localhost:8083",
-        "cart.service.url=http://localhost:8084",
-        "payment.service.url=http://localhost:8085"
-})
+@AutoConfigureMockMvc(addFilters = false) // [2] 시큐리티 필터 비활성화 (401/403 에러 방지)
 class AdminOrderControllerTest {
 
     @Autowired
@@ -50,9 +45,11 @@ class AdminOrderControllerTest {
     @DisplayName("GET /api/admin/orders - 관리자 주문 목록 조회")
     void getOrders() throws Exception {
         // given
+        // [3] orderId -> id 로 변경
         Page<OrderResponse> responsePage = new PageImpl<>(List.of(
-                OrderResponse.builder().orderId(1L).status("PENDING").build()
+                OrderResponse.builder().id(1L).status("PENDING").build()
         ));
+
         given(adminOrderService.getOrders(any(Pageable.class), anyString()))
                 .willReturn(responsePage);
 
@@ -63,8 +60,9 @@ class AdminOrderControllerTest {
                         .param("status", "PENDING")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].orderId").value(1L))
-                .andExpect(jsonPath("$.content[0].status").value("PENDING"));
+                // [4] JSON 경로 수정: $.content[0].orderId -> $.content[0].id
+                .andExpect(jsonPath("$.data[0].id").value(1L))
+                .andExpect(jsonPath("$.data[0].status").value("PENDING"));
     }
 
     @Test

@@ -9,14 +9,13 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor
@@ -99,7 +98,9 @@ public class OrderCreateRequest {
                 .receiverName(this.receiverName)
                 .receiverAddress(this.receiverAddress)
                 .orderDate(LocalDateTime.now())
-                .deliveryStatus(DeliveryStatus.PENDING)
+
+                .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
+
                 .productAmount(calculation.getProductAmount())
                 .deliveryFee(calculation.getDeliveryFee())
                 .wrappingFee(calculation.getWrappingFee())
@@ -109,8 +110,6 @@ public class OrderCreateRequest {
                 .earnedPoint(calculation.getEarnedPoint())
 
                 .orderKey(orderKey)
-
-                // [수정] 암호화된 비밀번호 저장
                 .orderPassword(encryptedPassword)
                 .build();
     }

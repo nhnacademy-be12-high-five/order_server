@@ -7,12 +7,10 @@ import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.WrapperService;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,7 +22,6 @@ public class WrapperServiceImpl implements WrapperService {
     @Override
     @Transactional
     public void createWrapper(WrapperRegisterRequest request) {
-        // DTO -> Entity 변환 위임
         wrapperRepository.save(request.toEntity());
     }
 

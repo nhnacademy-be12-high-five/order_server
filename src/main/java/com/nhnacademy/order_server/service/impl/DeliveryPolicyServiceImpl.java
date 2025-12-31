@@ -7,13 +7,13 @@ import com.nhnacademy.order_server.exception.OrderErrorCode;
 import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.DeliveryPolicyRepository;
 import com.nhnacademy.order_server.service.DeliveryPolicyService;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +24,8 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
 
     @Override
     @Transactional
+    // [추가] 정책이 새로 생성되면 기존 캐시('activePolicy')를 삭제해야 함
+    @CacheEvict(value = "activeDeliveryPolicy", allEntries = true)
     public void createDeliveryPolicy(DeliveryPolicyRequest request) {
         deliveryPolicyRepository.findByIsActiveTrue()
                 .ifPresent(DeliveryPolicy::deactivate);
@@ -32,6 +34,7 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
     }
 
     @Override
+    @Cacheable(value = "activeDeliveryPolicy", key = "'activePolicy'")
     public DeliveryPolicyResponse getActivePolicy() {
         DeliveryPolicy policy = deliveryPolicyRepository.findByIsActiveTrue()
                 .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
@@ -47,6 +50,7 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "activeDeliveryPolicy", allEntries = true)
     public void deleteDeliveryPolicy(Long policyId) {
         DeliveryPolicy policy = deliveryPolicyRepository.findById(policyId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
@@ -55,7 +59,7 @@ public class DeliveryPolicyServiceImpl implements DeliveryPolicyService {
     }
 
     @Override
-    @Cacheable(value = "activeDeliveryPolicy", key = "'activePolicy'")
+
     public DeliveryPolicy getActivePolicyEntity() {
         return deliveryPolicyRepository.findByIsActiveTrue()
                 .orElseThrow(() -> new OrderException(OrderErrorCode.DELIVERY_POLICY_NOT_FOUND));
