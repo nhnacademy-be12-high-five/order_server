@@ -311,4 +311,18 @@ public class OrderServiceImpl implements OrderService {
     private int calculateDeliveryFee(int amount, String addr) {
         return deliveryService.calculateDeliveryFee(amount, addr);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, Long> getBulkTotalAmounts(List<Long> userIds, LocalDateTime since) {
+        if (userIds == null || userIds.isEmpty()) return Collections.emptyMap();
+
+        List<Object[]> results = orderRepository.sumPaymentAmountByUserIds(userIds, since);
+
+        return results.stream()
+                .collect(Collectors.toMap(
+                        row -> (Long) row[0],
+                        row -> (Long) row[1]
+                ));
+    }
 }

@@ -61,4 +61,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT CASE WHEN COUNT(oi) > 0 THEN true ELSE false END FROM Order o JOIN o.orderItems oi " +
             "WHERE o.userId = :userId AND oi.bookId = :bookId AND o.deliveryStatus = 'PURCHASE_CONFIRMED'")
     boolean hasPurchasedBook(@Param("userId") Long userId, @Param("bookId") Long bookId);
+
+    @Query("SELECT o.userId, " +
+            "SUM(CAST(o.paymentAmount AS long) - COALESCE(o.deliveryFee, 0) - COALESCE(o.wrappingFee, 0)) " +
+            "FROM Order o " +
+            "WHERE o.userId IN :userIds " +
+            "AND o.orderDate >= :since " +
+            "AND o.deliveryStatus = com.nhnacademy.order_server.entity.enums.DeliveryStatus.PURCHASE_CONFIRMED " +
+            "GROUP BY o.userId")
+    List<Object[]> sumPaymentAmountByUserIds(@Param("userIds") List<Long> userIds,
+                                             @Param("since") LocalDateTime since);
+
 }
