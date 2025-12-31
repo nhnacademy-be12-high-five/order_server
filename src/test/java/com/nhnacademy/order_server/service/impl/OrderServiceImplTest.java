@@ -40,7 +40,9 @@ import com.nhnacademy.order_server.repository.WrapperRepository;
 import com.nhnacademy.order_server.service.DeliveryService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -305,10 +307,9 @@ class OrderServiceImplTest {
         @Test
         @DisplayName("getGuestOrder 성공")
         void getGuestOrder_Success() {
-            // [수정] deliveryStatus 필수 설정 추가
             Order order = Order.builder()
                     .id(1L)
-                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING) // NPE 방지용 상태 설정
+                    .deliveryStatus(DeliveryStatus.PAYMENT_WAITING)
                     .build();
 
             ReflectionTestUtils.setField(order, "orderPassword", "encodedPwd");
@@ -409,21 +410,15 @@ class OrderServiceImplTest {
         @Test
         @DisplayName("autoConfirmPurchase: 배송 완료 -> 구매 확정")
         void autoConfirmPurchase() {
-            // 주의: autoConfirmPurchase는 내부적으로 purchaseConfirm(id)를 호출합니다.
-            // purchaseConfirm은 다시 repo에서 findById를 하므로 이에 대한 Mocking이 필요합니다.
-
             Long orderId = 1L;
             Order order = Order.builder().id(orderId).userId(100L).paymentAmount(1000)
                     .deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED).build();
             Delivery delivery = Delivery.builder().order(order).build();
-            delivery.completeDelivery(); // 완료 날짜 세팅
+            delivery.completeDelivery();
             ReflectionTestUtils.setField(order, "delivery", delivery);
 
-            // 1. 스케줄러가 찾을 때 반환
             given(orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(eq(DeliveryStatus.DELIVERY_COMPLETED), any()))
                     .willReturn(List.of(order));
-
-            // 2. purchaseConfirm 내부에서 다시 찾을 때 반환
             given(orderRepository.findById(orderId)).willReturn(Optional.of(order));
 
             orderService.autoConfirmPurchase();
@@ -466,11 +461,109 @@ class OrderServiceImplTest {
         @DisplayName("성공: 배송 정보가 없어도 확정 가능 (null safety)")
         void success_NoDeliveryInfo() {
             Order order = Order.builder().id(1L).userId(100L).paymentAmount(1000).deliveryStatus(DeliveryStatus.DELIVERY_COMPLETED).build();
-            // delivery null
             given(orderRepository.findById(1L)).willReturn(Optional.of(order));
 
             orderService.purchaseConfirm(1L);
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.PURCHASE_CONFIRMED);
+        }
+    }
+
+    @Nested
+    @DisplayName("6. 대량 조회 (Bulk Query)")
+    class BulkQueryTest {
+
+        @Test
+        @DisplayName("성공: 여러 회원의 주문 총액 조회")
+        void getBulkTotalAmounts_Success() {
+            // Given
+            List<Long> userIds = List.of(1L, 2L, 3L);
+            LocalDateTime since = LocalDateTime.now().minusMonths(3);
+
+            List<Object[]> mockResults = List.of(
+                    new Object[]{1L, 150000L},
+                    new Object[]{2L, 200000L},
+                    new Object[]{3L, 50000L}
+            );
+
+            given(orderRepository.sumPaymentAmountByUserIds(eq(userIds), eq(since)))
+                    .willReturn(mockResults);
+
+            // When
+            Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, since);
+
+            // Then
+            assertThat(result).hasSize(3);
+            assertThat(result.get(1L)).isEqualTo(150000L);
+            assertThat(result.get(2L)).isEqualTo(200000L);
+            assertThat(result.get(3L)).isEqualTo(50000L);
+        }
+
+        @Test
+        @DisplayName("성공: 빈 리스트 요청 시 빈 맵 반환 (Repository 호출 안 함)")
+        void getBulkTotalAmounts_EmptyInput() {
+            // When
+            Map<Long, Long> result = orderService.getBulkTotalAmounts(Collections.emptyList(), LocalDateTime.now());
+
+            // Then
+            assertThat(result).isEmpty();
+            // 빈 리스트일 때 리포지토리를 호출하지 않는지 검증
+            verify(orderRepository, never()).sumPaymentAmountByUserIds(any(), any());
+        }
+
+        @Test
+        @DisplayName("성공: 결과가 없는 경우 빈 맵 반환")
+        void getBulkTotalAmounts_NoResult() {
+            // Given
+            List<Long> userIds = List.of(99L);
+            given(orderRepository.sumPaymentAmountByUserIds(anyList(), any()))
+                    .willReturn(Collections.emptyList());
+
+            // When
+            Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, LocalDateTime.now());
+
+            // Then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        @DisplayName("안전성: 결과에 NULL이 포함된 경우 필터링")
+        void getBulkTotalAmounts_FilterNulls() {
+            // Given
+            List<Long> userIds = List.of(1L, 2L);
+            List<Object[]> mockResults = List.of(
+                    new Object[]{1L, 10000L},
+                    new Object[]{null, 20000L},
+                    new Object[]{2L, null}
+            );
+
+            given(orderRepository.sumPaymentAmountByUserIds(anyList(), any()))
+                    .willReturn(mockResults);
+
+            Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, LocalDateTime.now());
+
+            assertThat(result).hasSize(1);
+            assertThat(result.get(1L)).isEqualTo(10000L);
+        }
+
+        @Test
+        @DisplayName("안전성: 타입 캐스팅 (Integer -> Long 변환 지원)")
+        void getBulkTotalAmounts_TypeCasting() {
+            // DB 드라이버에 따라 숫자가 Integer로 올 수도 있음
+
+            List<Long> userIds = List.of(1L);
+
+            List<Object[]> mockResults = Collections.singletonList(
+                    new Object[]{1L, 100}
+            );
+
+            given(orderRepository.sumPaymentAmountByUserIds(anyList(), any()))
+                    .willReturn(mockResults);
+
+            // When
+            Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, LocalDateTime.now());
+
+            // Then
+            assertThat(result.get(1L)).isEqualTo(100L);
         }
     }
 }

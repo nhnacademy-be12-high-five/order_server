@@ -315,14 +315,20 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public Map<Long, Long> getBulkTotalAmounts(List<Long> userIds, LocalDateTime since) {
-        if (userIds == null || userIds.isEmpty()) return Collections.emptyMap();
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
 
-        List<Object[]> results = orderRepository.sumPaymentAmountByUserIds(userIds, since);
+        List<Object[]> results = orderRepository.sumPaymentAmountByUserIds(
+                userIds,
+                since
+        );
 
         return results.stream()
+                .filter(row -> row[0] != null && row[1] != null)
                 .collect(Collectors.toMap(
-                        row -> (Long) row[0],
-                        row -> (Long) row[1]
+                        row -> ((Number) row[0]).longValue(),
+                        row -> ((Number) row[1]).longValue()
                 ));
     }
 }
