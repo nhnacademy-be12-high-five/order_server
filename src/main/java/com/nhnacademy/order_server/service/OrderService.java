@@ -9,6 +9,8 @@ import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -52,4 +54,6 @@ public interface OrderService {
     void autoConfirmPurchase();
 
     void cancelExpiredOrders();
+
+    Map<Long, Long> getBulkTotalAmounts(List<Long> userIds, LocalDateTime since);
 }

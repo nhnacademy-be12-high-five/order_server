@@ -311,4 +311,24 @@ public class OrderServiceImpl implements OrderService {
     private int calculateDeliveryFee(int amount, String addr) {
         return deliveryService.calculateDeliveryFee(amount, addr);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, Long> getBulkTotalAmounts(List<Long> userIds, LocalDateTime since) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Object[]> results = orderRepository.sumPaymentAmountByUserIds(
+                userIds,
+                since
+        );
+
+        return results.stream()
+                .filter(row -> row[0] != null && row[1] != null)
+                .collect(Collectors.toMap(
+                        row -> ((Number) row[0]).longValue(),
+                        row -> ((Number) row[1]).longValue()
+                ));
+    }
 }

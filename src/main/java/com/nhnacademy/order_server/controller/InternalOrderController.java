@@ -5,14 +5,12 @@ import com.nhnacademy.order_server.dto.response.OrderAggregationDto;
 import com.nhnacademy.order_server.service.OrderService;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/internal/orders")
@@ -37,5 +35,13 @@ public class InternalOrderController implements InternalOrderControllerDocs {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime since) {
 
         return ResponseEntity.ok(orderService.getTotalPaymentAmount(userId, since));
+    }
+
+    @PostMapping("/users/bulk-total-amount")
+    public ResponseEntity<Map<Long, Long>> getBulkTotalAmounts(
+            @RequestBody List<Long> userIds,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime since) {
+
+        return ResponseEntity.ok(orderService.getBulkTotalAmounts(userIds, since));
     }
 }
