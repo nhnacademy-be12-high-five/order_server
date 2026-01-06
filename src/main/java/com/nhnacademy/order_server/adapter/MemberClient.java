@@ -1,55 +1,46 @@
 package com.nhnacademy.order_server.adapter;
 
-import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionCreateRequest;
 import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.external.MemberGradeResponse;
+import com.nhnacademy.order_server.dto.response.external.PointBalanceResponse;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 
-@FeignClient(name = "TEAM5-MEMBER-SERVER", contextId = "memberClient")
+@FeignClient(name = "TEAM5-MEMBER-SERVER")
 public interface MemberClient {
 
+    // [회원 등급 조회]
     @GetMapping("/api/members/{userId}/grade")
     MemberGradeResponse getMemberGrade(@PathVariable("userId") Long userId);
 
-    @GetMapping("/api/members/{userId}/point-balance")
-    Integer getPointBalance(@PathVariable("userId") Long userId);
+    // [포인트 잔액 조회] - URL 변경됨
+    @GetMapping("/internal/point-transactions/{userId}")
+    PointBalanceResponse getPointBalance(@PathVariable("userId") Long userId);
 
-    // 주문 확정으로 이미 받은 포인트를 환불시킴
-    @PostMapping("/api/members/{userId}/point-deduct")
-    void deductPoint(@PathVariable("userId") Long userId,
-                     @RequestParam("amount") Integer amount,
-                     @RequestParam("orderId") Long orderId);
-
-    @PostMapping("/internal/points/revert")
-    void revertPoint(@RequestBody PointTransactionRequest requestDto);
-
-    @PostMapping("/internal/points/return-revert")
-    void revertPointForReturn(@RequestBody PointTransactionRequest requestDto);
+    // =================================================================
+    // [통합 포인트 트랜잭션] (적립, 반품 시 환불/회수 등)
+    // =================================================================
+    @PostMapping("/internal/point-transactions")
+    void createTransaction(@RequestBody PointTransactionCreateRequest request);
 
 
-    @PostMapping("/api/members/{memberId}/point/reserve")
-    ResponseEntity<Void> reservePoint(@PathVariable("memberId") Long memberId,
-                                      @RequestParam("amount") int amount,
-                                      @RequestParam("orderId") Long orderId);
+    // =================================================================
+    // [TCC 패턴] 주문/결제 프로세스 (예약 -> 확정 or 취소)
+    // =================================================================
 
-    @PostMapping("/internal/points/earn")
-    void earnPoint(@RequestBody PointEarnRequest requestDto);
+    // 1. 포인트 사용 예약 (Reserve)
+    @PostMapping("/internal/point-transactions/tcc/reserve")
+    void reservePoint(@RequestBody PointTransactionRequest request);
 
-    @PostMapping("/api/members/{userId}/point/cancel")
-    void cancelPoint(@PathVariable("userId") Long userId,
-                     @RequestParam("amount") Integer amount,
-                     @RequestParam("orderId") Long orderId); // [추가] orderId 파라미터
+    // 2. 포인트 사용 확정 (Confirm)
+    @PostMapping("/internal/point-transactions/tcc/confirm")
+    void confirmPoint(@RequestBody PointTransactionRequest request);
 
-    // [TCC 2단계] 포인트 사용 확정
-    @PostMapping("/api/members/{userId}/point/confirm")
-    void confirmPoint(@PathVariable("userId") Long userId,
-                      @RequestParam("amount") Integer amount,
-                      @RequestParam("orderId") Long orderId); // [추가] orderId 파라미터
-
+    // 3. 포인트 사용 취소 (Cancel - 결제 실패/취소 시 롤백)
+    @PostMapping("/internal/point-transactions/tcc/cancel")
+    void cancelPoint(@RequestBody PointTransactionRequest request);
 }

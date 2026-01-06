@@ -2,6 +2,7 @@ package com.nhnacademy.order_server.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -72,7 +73,11 @@ class OrderCreateServiceTest {
         // 2. 배송 정보 저장 검증
         verify(deliveryRepository).save(any());
         // 3. 포인트 가승인 요청 검증
-        verify(memberClient).reservePoint(eq(100L), eq(1000), eq(1L));
+        verify(memberClient).reservePoint(argThat(req ->
+                req.getMemberId().equals(100L) &&
+                        req.getAmount() == 1000 &&
+                        req.getOrderId() == 1L
+        ));
         // 4. 장바구니 비우기 검증
         verify(cartClient).clearCart(eq(100L));
     }

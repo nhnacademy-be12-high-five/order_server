@@ -3,6 +3,7 @@ package com.nhnacademy.order_server.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -200,12 +201,23 @@ class AdminOrderServiceImplTest {
 
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
-            // 1. 환불금 적립 호출 확인
-            verify(memberClient).earnPoint(any(PointEarnRequest.class));
-            // 2. 사용 포인트 복구 호출 확인
-            verify(memberClient).revertPointForReturn(any(PointTransactionRequest.class));
-            // 3. 적립 포인트 회수 호출 확인
-            verify(memberClient).deductPoint(eq(100L), eq(500), eq(1L));
+            // 1. 환불금 적립 (EARN_REFUND) 호출 확인
+            verify(memberClient).createTransaction(argThat(req ->
+                    "EARN_REFUND".equals(req.getTransactionType()) &&
+                            req.getMemberId().equals(order.getUserId())
+            ));
+
+            // 2. 사용 포인트 복구 (CANCEL_USE) 호출 확인
+            verify(memberClient).createTransaction(argThat(req ->
+                    "CANCEL_USE".equals(req.getTransactionType()) &&
+                            req.getAmount() == 1000 // 사용했던 포인트
+            ));
+
+            // 3. 적립 포인트 회수 (CANCEL_EARN) 호출 확인
+            verify(memberClient).createTransaction(argThat(req ->
+                    "CANCEL_EARN".equals(req.getTransactionType()) &&
+                            req.getAmount() == 500 // 적립받았던 포인트
+            ));
             // 4. 쿠폰 복구 호출 확인
             verify(couponClient).cancelCouponUsage(eq(100L), any());
             // 5. 재고 복구 호출 확인

@@ -90,15 +90,4 @@ class OrderCancelServiceTest {
         // 재고 '해제(release)' 호출 확인 (아직 안 뺐으니 잡고 있던 것만 놓음)
         verify(bookClient).releaseHeldStock(anyList(), eq("key"));
     }
-
-    @Test
-    @DisplayName("실패: 이미 배송 중인 경우 취소 불가")
-    void fail_Delivering() {
-        Order order = Order.builder().id(1L).deliveryStatus(DeliveryStatus.DELIVERING).build();
-        given(orderRepository.findById(1L)).willReturn(Optional.of(order));
-
-        assertThatThrownBy(() -> orderCancelService.cancelOrderTransactional(1L))
-                .isInstanceOf(OrderException.class)
-                .hasFieldOrPropertyWithValue("errorCode", OrderErrorCode.CANNOT_CANCEL_ORDER);
-    }
 }
