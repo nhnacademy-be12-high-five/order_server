@@ -66,6 +66,9 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             case DELIVERING -> handleDelivering(order, request);
             case DELIVERY_COMPLETED -> handleDeliveryCompleted(order);
             case PURCHASE_CONFIRMED -> handlePurchaseConfirmed(order);
+            default -> throw new IllegalStateException(
+                    "처리되지 않은 주문 상태 변경: " + newStatus
+            );
         }
 
         order.updateStatus(newStatus);
