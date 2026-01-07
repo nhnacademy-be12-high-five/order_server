@@ -1,6 +1,6 @@
 FROM eclipse-temurin:21-jre-alpine
 
-RUN apk add --no-cache tzdata && \
+RUN apk add --no-cache tzdata curl && \
     cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && \
     echo "Asia/Seoul" > /etc/timezone
 
