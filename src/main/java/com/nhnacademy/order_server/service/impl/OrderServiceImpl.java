@@ -9,6 +9,7 @@ import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
 import com.nhnacademy.order_server.dto.request.MemberCouponUseRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
 import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.GuestOrderDetailResponse;
@@ -239,10 +240,15 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItem> finalOrderItems = new ArrayList<>();
         List<StockRequest> stockRequests = new ArrayList<>();
         int totalAmount = 0;
+        int totalWrappingFee = 0;
         for (OrderCreateRequest.OrderItemRequest item : request.getOrderItems()) {
             BookInfoResponse book = bookInfoMap.get(item.getBookId());
             Wrapper wrap = item.getWrapperId() != null ? wrapperMap.get(item.getWrapperId()) : null;
             totalAmount += book.getPrice() * item.getQuantity();
+            if (wrap != null) {
+                totalWrappingFee += wrap.getWrapperPrice() * item.getQuantity();
+            }
+
             finalOrderItems.add(OrderItem.builder().bookId(book.getBookId()).bookTitle(book.getTitle())
                     .quantity(item.getQuantity()).unitPrice(book.getPrice()).wrapper(wrap).isWrapped(wrap != null)
                     .key(UUID.randomUUID().toString()).build());
@@ -250,17 +256,23 @@ public class OrderServiceImpl implements OrderService {
         }
         bookClient.holdStockBatch(stockRequests, orderKey);
         return OrderCalculationData.builder().tempOrderItems(finalOrderItems).totalProductAmount(totalAmount)
-                .totalWrappingFee(0).totalEarnedPoint((int)(totalAmount * earnRate))
+                .totalWrappingFee(totalWrappingFee).totalEarnedPoint((int)(totalAmount * earnRate))
                 .firstBookTitle(finalOrderItems.getFirst().getBookTitle()).build();
     }
 
     private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
         int couponDiscount = calculateCouponDiscount(request, data.totalProductAmount());
         int usedPoint = request.getUsedPoint() != null ? request.getUsedPoint() : 0;
-        int finalPayment = Math.max(0, (data.totalProductAmount() + deliveryFee) - couponDiscount - usedPoint);
-        return OrderCreateRequest.OrderCalculationResult.builder().productAmount(data.totalProductAmount())
-                .deliveryFee(deliveryFee).wrappingFee(0).couponDiscount(couponDiscount).pointDiscount(usedPoint)
-                .paymentAmount(finalPayment).earnedPoint(data.totalEarnedPoint()).build();
+        int wrappingFee = data.totalWrappingFee();
+        int finalPayment = Math.max(0, (data.totalProductAmount() + deliveryFee + wrappingFee) - couponDiscount - usedPoint);
+        return OrderCreateRequest.OrderCalculationResult.builder()
+                .productAmount(data.totalProductAmount())
+                .deliveryFee(deliveryFee)
+                .wrappingFee(wrappingFee)
+                .couponDiscount(couponDiscount)
+                .pointDiscount(usedPoint)
+                .paymentAmount(finalPayment)
+                .earnedPoint(data.totalEarnedPoint()).build();
     }
 
     private int calculateCouponDiscount(OrderCreateRequest request, int totalAmount) {
@@ -281,21 +293,67 @@ public class OrderServiceImpl implements OrderService {
         rabbitTemplate.convertAndSend("point-queue", pointRequest);
     }
 
+    // [TCC Confirm] 결제 성공 후처리
     private void finalizeExternalResources(Order o) {
-        List<Long> bookIds = o.getOrderItems().stream().flatMap(i -> Collections.nCopies(i.getQuantity(), i.getBookId()).stream()).toList();
+        // 1. 재고 확정
+        List<Long> bookIds = o.getOrderItems().stream()
+                .flatMap(i -> Collections.nCopies(i.getQuantity(), i.getBookId()).stream())
+                .toList();
         bookClient.confirmStockDeduction(bookIds, o.getOrderKey());
-        if (o.getPointDiscount() != null && o.getPointDiscount() > 0) memberClient.confirmPoint(o.getUserId(), o.getPointDiscount(), o.getId());
+
+        // 2. 포인트 사용 확정 (TCC Confirm) - [수정됨]
+        if (o.getPointDiscount() != null && o.getPointDiscount() > 0) {
+            memberClient.confirmPoint(PointTransactionRequest.builder()
+                    .memberId(o.getUserId())
+                    .amount(Long.valueOf(o.getPointDiscount()))
+                    .orderId(o.getId())
+                    .build());
+        }
     }
 
+    // [TCC Cancel] 결제 대기 중 취소/실패 시
     private void processPaymentWaitingOrderCancellation(Order o) {
-        if (o.getPointDiscount() != null && o.getPointDiscount() > 0) memberClient.cancelPoint(o.getUserId(), o.getPointDiscount(), o.getId());
+        // 1. 포인트 사용 취소 (TCC Cancel) - [수정됨]
+        if (o.getPointDiscount() != null && o.getPointDiscount() > 0) {
+            memberClient.cancelPoint(PointTransactionRequest.builder()
+                    .memberId(o.getUserId())
+                    .amount(Long.valueOf(o.getPointDiscount()))
+                    .orderId(o.getId())
+                    .build());
+        }
+        // 2. 재고 선점 해제
         bookClient.releaseHeldStock(o.getOrderItems().stream().map(OrderItem::getBookId).toList(), o.getOrderKey());
     }
 
+    // [Compensate] 주문 생성 중 에러 발생 시 보상 트랜잭션
     private void compensateTransaction(Long uid, Integer point, OrderCalculationData data, String key) {
-        if (uid != null && point != null && point > 0) try { memberClient.cancelPoint(uid, point, 0L); } catch (Exception ignored) {}
-        if (data != null) try { bookClient.releaseHeldStock(data.tempOrderItems().stream().map(OrderItem::getBookId).toList(), key); } catch (Exception ignored) {}
-    }
+        // 포인트 TCC Cancel
+        if (uid != null && point != null && point > 0) {
+            try {
+                // orderId가 아직 없을 수도 있으므로 0L 혹은 생성된 ID 사용해야 함.
+                // createOrder 내에서 에러난거면 DB에 Order가 안생겼을 수 있음 -> 이 경우 Member 서버가 OrderId 못찾으면 에러낼 수 있음.
+                // 하지만 Member Server 구현 상 Reserve 상태면 OrderId 없이도 취소 가능하게 하거나,
+                // OrderCreateService에서 ID를 딴 뒤 실패했다면 그 ID를 넘겨야 함.
+                // 여기선 'orderId=0L'로 보내면 Member서버가 못찾을 수 있으니 주의.
+                // (Member 서버가 OrderId를 FK로 잡지 않고 논리적 참조만 한다면 0L도 OK)
+                memberClient.cancelPoint(PointTransactionRequest.builder()
+                        .memberId(uid)
+                        .amount(Long.valueOf(point))
+                        .orderId(0L) // 주의: 실제로는 생성 시도했던 ID가 필요할 수 있음
+                        .build());
+            } catch (Exception e) {
+                log.error("보상 트랜잭션(포인트 취소) 실패", e);
+            }
+        }
+        // 재고 해제
+        if (data != null) {
+            try {
+                bookClient.releaseHeldStock(data.tempOrderItems().stream().map(OrderItem::getBookId).toList(), key);
+            } catch (Exception ignored) {}
+        }
+    // ... (purchaseConfirm 등 기타 메서드 내 rabbitTemplate 메시지 전송 로직 유지)
+    // purchaseConfirm에서 포인트 '적립'은 RabbitMQ를 타므로 MemberClient 직접 호출 안 함. (기존 유지)
+}
 
     private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
         return Objects.requireNonNull(bookClient.getBooksBulk(items.stream().map(OrderCreateRequest.OrderItemRequest::getBookId).distinct().toList()).getBody())

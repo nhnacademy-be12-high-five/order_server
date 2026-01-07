@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -23,6 +24,7 @@ import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.message.PaymentSuccessMessage;
 import com.nhnacademy.order_server.dto.request.CouponCalculationRequest;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.CouponCalculationResponse;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
@@ -154,7 +156,11 @@ class OrderServiceImplTest {
                     .isInstanceOf(RuntimeException.class);
 
             verify(bookClient).releaseHeldStock(anyList(), anyString());
-            verify(memberClient).cancelPoint(eq(100L), eq(1000), anyLong());
+            verify(memberClient).cancelPoint(argThat(req ->
+                    req.getMemberId().equals(100L) &&
+                            req.getAmount() == 1000 &&
+                            req.getOrderId() == 0L
+            ));
         }
 
         @Test
@@ -168,7 +174,8 @@ class OrderServiceImplTest {
                     .given(orderCreateService).createOrderInTransaction(any(), anyString(), any(), any());
 
             // 보상 트랜잭션 메서드들도 에러를 던지도록 설정 (catch 블록 테스트)
-            willThrow(new RuntimeException("Compensate Error")).given(memberClient).cancelPoint(anyLong(), anyInt(), anyLong());
+            willThrow(new RuntimeException("Compensate Error"))
+                    .given(memberClient).cancelPoint(any(PointTransactionRequest.class));
 
             assertThatThrownBy(() -> orderService.createOrder(request))
                     .isInstanceOf(RuntimeException.class)

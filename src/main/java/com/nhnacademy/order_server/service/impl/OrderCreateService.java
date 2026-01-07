@@ -4,6 +4,7 @@ import com.nhnacademy.order_server.adapter.CartClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.dto.OrderCalculationData;
 import com.nhnacademy.order_server.dto.request.OrderCreateRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.OrderCreateResponse;
 import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
@@ -51,9 +52,13 @@ public class OrderCreateService {
         Order order = saveOrder(request, result, orderKey, encryptedPassword, orderData.tempOrderItems());
         order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
 
-        // 3. 포인트 가승인 (회원인 경우)
+        // 3. 포인트 가승인 (TCC Reserve 호출)
         if (request.getUserId() != null && request.getUsedPoint() > 0) {
-            memberClient.reservePoint(request.getUserId(), request.getUsedPoint(), order.getId());
+            memberClient.reservePoint(PointTransactionRequest.builder()
+                    .memberId(request.getUserId())
+                    .amount(Long.valueOf(request.getUsedPoint()))
+                    .orderId(order.getId())
+                    .build());
         }
 
         // 4. 배송 정보 저장

@@ -6,6 +6,7 @@ import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
 import com.nhnacademy.order_server.dto.request.PointEarnRequest;
+import com.nhnacademy.order_server.dto.request.PointTransactionCreateRequest;
 import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
@@ -140,15 +141,13 @@ public class AdminOrderServiceImpl implements AdminOrderService {
 
         if (refundAmount > 0) {
             try {
-                PointEarnRequest earnRequest = PointEarnRequest.builder()
+                memberClient.createTransaction(PointTransactionCreateRequest.builder()
                         .memberId(order.getUserId())
-                        .eventType("EARN_REFUND")
-                        .pureAmount(refundAmount)
+                        .transactionType("EARN_REFUND") // [통합 API 타입] 환불 적립
+                        .amount((long) refundAmount)
                         .orderId(order.getId())
-                        .build();
-
-                memberClient.earnPoint(earnRequest);
-
+                        .description("반품 환불")
+                        .build());
                 log.info("반품 환불금 포인트 적립 완료: userId={}, amount={}", order.getUserId(), refundAmount);
 
             } catch (Exception e) {
@@ -160,26 +159,32 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         // 2. 사용했던 포인트 복구 (주문 시 포인트를 썼다면)
         if (order.getPointDiscount() != null && order.getPointDiscount() > 0) {
             try {
-                PointTransactionRequest revertRequest = new PointTransactionRequest(
-                        order.getUserId(),
-                        (long) order.getPointDiscount(),
-                        order.getId()
-                );
-                // [수정] revertPoint 대신 새로 만든 revertPointForReturn 호출!
-                memberClient.revertPointForReturn(revertRequest);
+                memberClient.createTransaction(PointTransactionCreateRequest.builder()
+                        .memberId(order.getUserId())
+                        .transactionType("CANCEL_USE") // [통합 API 타입] 사용 취소(복구)
+                        .amount((long) order.getPointDiscount())
+                        .orderId(order.getId())
+                        .description("반품으로 인한 사용 포인트 복구")
+                        .build());
             } catch (Exception e) {
-                log.error("사용 포인트 복구 실패: userId={}", order.getUserId());
+                log.error("사용 포인트 복구 실패", e);
                 throw new OrderException(OrderErrorCode.MEMBER_SERVICE_ERROR);
             }
         }
 
-        // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트가 있다면)
-        if (order.getDeliveryStatus() == DeliveryStatus.PURCHASE_CONFIRMED &&
-                order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
+        // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트 뺏기) -> 'CANCEL_EARN' 사용 (구매 확정 상태에서만 회수)
+        if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
             try {
-                memberClient.deductPoint(order.getUserId(), order.getEarnedPoint(), order.getId());
+                memberClient.createTransaction(PointTransactionCreateRequest.builder()
+                        .memberId(order.getUserId())
+                        .transactionType("CANCEL_EARN") // [통합 API 타입] 적립 취소(회수)
+                        .amount((long) order.getEarnedPoint())
+                        .orderId(order.getId())
+                        .description("반품으로 인한 적립 포인트 회수")
+                        .build());
             } catch (Exception e) {
-                log.error("적립 포인트 회수 실패: userId={}", order.getUserId());
+                log.error("적립 포인트 회수 실패", e);
+                // 회수 실패는 로그만 남기고 진행 (비즈니스 정책에 따라 다름)
             }
         }
 

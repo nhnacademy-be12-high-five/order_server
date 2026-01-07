@@ -3,12 +3,14 @@ package com.nhnacademy.order_server.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class PointTransactionRequest {
     @NotNull(message = "회원 아이디는 필수입니다")
     @Schema(description = "포인트 사용/환불 될 회원 아이디", example = "1")
