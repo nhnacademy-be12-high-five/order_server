@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @Builder
 public class PointTransactionCreateRequest {
     private Long memberId;
-    private String transactionType; // EARN, USE, CANCEL_USE, CANCEL_EARN
+    private String pointEventType; // EARN, USE, CANCEL_USE, CANCEL_EARN
     private Long amount;
     private Long orderId;
     private String description;

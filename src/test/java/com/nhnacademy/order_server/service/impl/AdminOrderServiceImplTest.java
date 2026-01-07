@@ -15,8 +15,6 @@ import com.nhnacademy.order_server.adapter.BookClient;
 import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PointEarnRequest;
-import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Delivery;
 import com.nhnacademy.order_server.entity.Order;
@@ -203,19 +201,19 @@ class AdminOrderServiceImplTest {
 
             // 1. 환불금 적립 (EARN_REFUND) 호출 확인
             verify(memberClient).createTransaction(argThat(req ->
-                    "EARN_REFUND".equals(req.getTransactionType()) &&
+                    "EARN_REFUND".equals(req.getPointEventType()) &&
                             req.getMemberId().equals(order.getUserId())
             ));
 
             // 2. 사용 포인트 복구 (CANCEL_USE) 호출 확인
             verify(memberClient).createTransaction(argThat(req ->
-                    "CANCEL_USE".equals(req.getTransactionType()) &&
+                    "CANCEL_USE".equals(req.getPointEventType()) &&
                             req.getAmount() == 1000 // 사용했던 포인트
             ));
 
             // 3. 적립 포인트 회수 (CANCEL_EARN) 호출 확인
             verify(memberClient).createTransaction(argThat(req ->
-                    "CANCEL_EARN".equals(req.getTransactionType()) &&
+                    "CANCEL_EARN".equals(req.getPointEventType()) &&
                             req.getAmount() == 500 // 적립받았던 포인트
             ));
             // 4. 쿠폰 복구 호출 확인
