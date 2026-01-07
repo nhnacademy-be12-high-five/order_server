@@ -1,7 +1,6 @@
 package com.nhnacademy.order_server.service.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -15,8 +14,6 @@ import com.nhnacademy.order_server.adapter.PaymentClient;
 import com.nhnacademy.order_server.entity.Order;
 import com.nhnacademy.order_server.entity.OrderItem;
 import com.nhnacademy.order_server.entity.enums.DeliveryStatus;
-import com.nhnacademy.order_server.exception.OrderErrorCode;
-import com.nhnacademy.order_server.exception.OrderException;
 import com.nhnacademy.order_server.repository.OrderRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;

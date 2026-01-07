@@ -84,7 +84,7 @@ class OrderReturnServiceImplTest {
             OrderReturnCheckResponse response = orderReturnService.checkReturnEligibility(1L, ReturnReason.PRODUCT_DEFECT);
 
             assertThat(response.isEligible()).isTrue();
-            assertThat(response.getEstimatedReturnFee()).isEqualTo(0);
+            assertThat(response.getEstimatedReturnFee()).isZero();
             assertThat(response.getEstimatedRefundAmount()).isEqualTo(50000);
         }
 

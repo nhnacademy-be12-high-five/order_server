@@ -62,10 +62,6 @@ public class OrderCancelService {
         order.updateStatus(DeliveryStatus.CANCELED);
     }
 
-    private boolean isCancelable(DeliveryStatus status) {
-        return status == DeliveryStatus.PREPARING || status == DeliveryStatus.PAYMENT_WAITING;
-    }
-
     private void processPreparingOrderCancellation(Order o) {
         if (o.getPaymentKey() != null) {
             paymentClient.cancelPayment(o.getPaymentKey(), new PaymentCancelRequest("취소", o.getPaymentAmount()));

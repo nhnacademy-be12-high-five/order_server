@@ -59,57 +59,13 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        DeliveryStatus newStatus;
-        try {
-            newStatus = DeliveryStatus.valueOf(request.getStatus());
-        } catch (IllegalArgumentException e) {
-            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-        }
+        DeliveryStatus newStatus = parseStatus(request.getStatus());
 
-        if (newStatus == DeliveryStatus.RETURN_COMPLETED) {
-            // 해당 주문의 반품 요청 정보를 찾음
-            OrderReturn orderReturn = orderReturnRepository.findByOrderId(orderId)
-                    .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
-
-            // 기존에 만들어둔 환불 승인 로직(approveReturn)을 호출
-            approveReturn(order, orderReturn);
-
-            // approveReturn 내부에서 status 업데이트를 하므로 여기서 리턴
-            return;
-        }
-
-        // 1. 배송 중 (DELIVERING)
-        if (newStatus == DeliveryStatus.DELIVERING) {
-            if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-            }
-
-            if (order.getDelivery() != null) {
-                order.getDelivery().startDelivery(request.getTrackingNumber());
-            }
-        }
-        // 2. 배송 완료 (DELIVERY_COMPLETED) [변경됨]
-        else if (newStatus == DeliveryStatus.DELIVERY_COMPLETED) {
-            if (order.getDelivery() != null) {
-                order.getDelivery().completeDelivery();
-            }
-        }
-        // 3. 구매 확정 (PURCHASE_CONFIRMED) [추가됨]
-        else if (newStatus == DeliveryStatus.PURCHASE_CONFIRMED) {
-            // 배송준비중, 배송중, 배송완료 상태라면 구매 확정 가능
-            boolean isConfirmable = order.getDeliveryStatus() == DeliveryStatus.PREPARING ||
-                    order.getDeliveryStatus() == DeliveryStatus.DELIVERING ||
-                    order.getDeliveryStatus() == DeliveryStatus.DELIVERY_COMPLETED;
-
-            if (!isConfirmable) {
-                // 결제대기, 이미 취소됨, 반품신청됨 등의 상태에서는 불가
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
-            }
-
-            // 배송 중이나 준비 중에서 바로 확정하는 경우, 배송 완료일이 비어있을 수 있으므로 채워줌
-            if (order.getDelivery() != null && order.getDelivery().getActualCompletionDate() == null) {
-                order.getDelivery().completeDelivery();
-            }
+        switch (newStatus) {
+            case RETURN_COMPLETED -> handleReturnCompleted(orderId, order);
+            case DELIVERING -> handleDelivering(order, request);
+            case DELIVERY_COMPLETED -> handleDeliveryCompleted(order);
+            case PURCHASE_CONFIRMED -> handlePurchaseConfirmed(order);
         }
 
         order.updateStatus(newStatus);
@@ -180,14 +136,14 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
 
         // 3. 적립된 포인트 회수
-            memberClient.createTransaction(PointTransactionCreateRequest.builder()
-                    .memberId(order.getUserId())
-                    .pointEventType("EARN_CANCEL_RETURN")
-                    .amount(0L) // 금액 몰라도 됨 (Member Server가 찾아서 처리함)
-                    .orderId(order.getId())
-                    .description("반품으로 인한 적립 포인트 회수")
-                    .build());
-            log.info("적립 포인트 회수 요청 전송 완료: orderId={}", order.getId());
+        memberClient.createTransaction(PointTransactionCreateRequest.builder()
+                .memberId(order.getUserId())
+                .pointEventType("EARN_CANCEL_RETURN")
+                .amount(0L) // 금액 몰라도 됨 (Member Server가 찾아서 처리함)
+                .orderId(order.getId())
+                .description("반품으로 인한 적립 포인트 회수")
+                .build());
+        log.info("적립 포인트 회수 요청 전송 완료: orderId={}", order.getId());
 
         // 4. 쿠폰 복구
         if (order.getCouponId() != null) {
@@ -227,5 +183,52 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     private void rejectReturn(Order order) {
         // 반품 거절 시 배송 완료 상태로 원복
         order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+    }
+
+    private DeliveryStatus parseStatus(String status) {
+        try {
+            return DeliveryStatus.valueOf(status);
+        } catch (IllegalArgumentException e) {
+            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+        }
+    }
+
+    private void handleReturnCompleted(Long orderId, Order order) {
+        OrderReturn orderReturn = orderReturnRepository.findByOrderId(orderId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.RETURN_NOT_FOUND));
+
+        approveReturn(order, orderReturn);
+    }
+
+    private void handleDelivering(Order order, OrderStatusUpdateRequest request) {
+        if (request.getTrackingNumber() == null || request.getTrackingNumber().isBlank()) {
+            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+        }
+
+        if (order.getDelivery() != null) {
+            order.getDelivery().startDelivery(request.getTrackingNumber());
+        }
+    }
+
+    private void handleDeliveryCompleted(Order order) {
+        if (order.getDelivery() != null) {
+            order.getDelivery().completeDelivery();
+        }
+    }
+
+    private void handlePurchaseConfirmed(Order order) {
+        boolean confirmable =
+                order.getDeliveryStatus() == DeliveryStatus.PREPARING ||
+                        order.getDeliveryStatus() == DeliveryStatus.DELIVERING ||
+                        order.getDeliveryStatus() == DeliveryStatus.DELIVERY_COMPLETED;
+
+        if (!confirmable) {
+            throw new OrderException(OrderErrorCode.INVALID_REQUEST);
+        }
+
+        if (order.getDelivery() != null &&
+                order.getDelivery().getActualCompletionDate() == null) {
+            order.getDelivery().completeDelivery();
+        }
     }
 }
