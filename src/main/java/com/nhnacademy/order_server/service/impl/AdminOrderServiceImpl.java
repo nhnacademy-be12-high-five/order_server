@@ -5,9 +5,7 @@ import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
 import com.nhnacademy.order_server.dto.request.MemberCouponCancelRequest;
 import com.nhnacademy.order_server.dto.request.OrderStatusUpdateRequest;
-import com.nhnacademy.order_server.dto.request.PointEarnRequest;
 import com.nhnacademy.order_server.dto.request.PointTransactionCreateRequest;
-import com.nhnacademy.order_server.dto.request.PointTransactionRequest;
 import com.nhnacademy.order_server.dto.request.StockRequest;
 import com.nhnacademy.order_server.dto.response.OrderResponse;
 import com.nhnacademy.order_server.entity.Order;
@@ -98,11 +96,20 @@ public class AdminOrderServiceImpl implements AdminOrderService {
         }
         // 3. 구매 확정 (PURCHASE_CONFIRMED) [추가됨]
         else if (newStatus == DeliveryStatus.PURCHASE_CONFIRMED) {
-            // 배송 완료 상태에서만 구매 확정 가능하도록 제약
-            if (order.getDeliveryStatus() != DeliveryStatus.DELIVERY_COMPLETED) {
-                throw new OrderException(OrderErrorCode.INVALID_REQUEST); // "배송 완료된 주문만 구매 확정할 수 있습니다."
+            // 배송준비중, 배송중, 배송완료 상태라면 구매 확정 가능
+            boolean isConfirmable = order.getDeliveryStatus() == DeliveryStatus.PREPARING ||
+                    order.getDeliveryStatus() == DeliveryStatus.DELIVERING ||
+                    order.getDeliveryStatus() == DeliveryStatus.DELIVERY_COMPLETED;
+
+            if (!isConfirmable) {
+                // 결제대기, 이미 취소됨, 반품신청됨 등의 상태에서는 불가
+                throw new OrderException(OrderErrorCode.INVALID_REQUEST);
             }
-            // (옵션) 여기서 포인트 적립 로직을 호출하거나, OrderServiceImpl의 confirmPurchase 로직을 재사용할 수 있음
+
+            // 배송 중이나 준비 중에서 바로 확정하는 경우, 배송 완료일이 비어있을 수 있으므로 채워줌
+            if (order.getDelivery() != null && order.getDelivery().getActualCompletionDate() == null) {
+                order.getDelivery().completeDelivery();
+            }
         }
 
         order.updateStatus(newStatus);
@@ -143,7 +150,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             try {
                 memberClient.createTransaction(PointTransactionCreateRequest.builder()
                         .memberId(order.getUserId())
-                        .transactionType("EARN_REFUND") // [통합 API 타입] 환불 적립
+                        .pointEventType("EARN_REFUND") // [통합 API 타입] 환불 적립
                         .amount((long) refundAmount)
                         .orderId(order.getId())
                         .description("반품 환불")
@@ -161,7 +168,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             try {
                 memberClient.createTransaction(PointTransactionCreateRequest.builder()
                         .memberId(order.getUserId())
-                        .transactionType("CANCEL_USE") // [통합 API 타입] 사용 취소(복구)
+                        .pointEventType("USE_CANCEL_RETURN") // [통합 API 타입] 사용 취소(복구)
                         .amount((long) order.getPointDiscount())
                         .orderId(order.getId())
                         .description("반품으로 인한 사용 포인트 복구")
@@ -172,23 +179,17 @@ public class AdminOrderServiceImpl implements AdminOrderService {
             }
         }
 
-        // 3. 적립된 포인트 회수 (구매 확정으로 받은 포인트 뺏기) -> 'CANCEL_EARN' 사용 (구매 확정 상태에서만 회수)
-        if (order.getEarnedPoint() != null && order.getEarnedPoint() > 0) {
-            try {
-                memberClient.createTransaction(PointTransactionCreateRequest.builder()
-                        .memberId(order.getUserId())
-                        .transactionType("CANCEL_EARN") // [통합 API 타입] 적립 취소(회수)
-                        .amount((long) order.getEarnedPoint())
-                        .orderId(order.getId())
-                        .description("반품으로 인한 적립 포인트 회수")
-                        .build());
-            } catch (Exception e) {
-                log.error("적립 포인트 회수 실패", e);
-                // 회수 실패는 로그만 남기고 진행 (비즈니스 정책에 따라 다름)
-            }
-        }
+        // 3. 적립된 포인트 회수
+            memberClient.createTransaction(PointTransactionCreateRequest.builder()
+                    .memberId(order.getUserId())
+                    .pointEventType("EARN_CANCEL_RETURN")
+                    .amount(0L) // 금액 몰라도 됨 (Member Server가 찾아서 처리함)
+                    .orderId(order.getId())
+                    .description("반품으로 인한 적립 포인트 회수")
+                    .build());
+            log.info("적립 포인트 회수 요청 전송 완료: orderId={}", order.getId());
 
-        // 쿠폰 복구
+        // 4. 쿠폰 복구
         if (order.getCouponId() != null) {
             try {
                 MemberCouponCancelRequest cancelReq =
@@ -208,7 +209,6 @@ public class AdminOrderServiceImpl implements AdminOrderService {
                     .map(item -> new StockRequest(item.getBookId(), item.getQuantity()))
                     .toList();
 
-            // 키 충돌 방지 및 구분을 위해 "-return" 접미사 사용 추천
             String idempotencyKey = order.getId() + "-return";
 
             bookClient.restoreStock(restoreRequests, idempotencyKey);
@@ -225,11 +225,7 @@ public class AdminOrderServiceImpl implements AdminOrderService {
     }
 
     private void rejectReturn(Order order) {
-        // 반품 거절 시: 배송 완료 상태로 원복 (COMPLETED -> DELIVERY_COMPLETED) [변경됨]
-        // 상황에 따라 구매 확정(PURCHASE_CONFIRMED)으로 돌려야 할 수도 있음 (정책 결정 필요)
-
+        // 반품 거절 시 배송 완료 상태로 원복
         order.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
     }
-
-
 }
