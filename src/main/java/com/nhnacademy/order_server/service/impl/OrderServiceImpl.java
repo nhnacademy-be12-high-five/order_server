@@ -89,47 +89,59 @@ public class OrderServiceImpl implements OrderService {
     // 2. READ
     // =====================================================================================
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getMyOrders(Long userId, Pageable pageable) {
         return orderRepository.findAllByUserId(userId, pageable).map(OrderResponse::from);
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public OrderResponse getOrderDetail(Long orderId) {
         return orderRepository.findByIdWithItems(orderId).map(OrderResponse::from)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public GuestOrderDetailResponse getGuestOrder(Long orderId, String password) {
-        Order order = orderRepository.findByIdWithItems(orderId).orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
-        if (!passwordEncoder.matches(password, order.getOrderPassword())) throw new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
+        Order order = orderRepository.findByIdWithItems(orderId)
+                .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
+        if (!passwordEncoder.matches(password, order.getOrderPassword())) {
+            throw new OrderException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
         return GuestOrderDetailResponse.from(order);
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public List<OrderAggregationDto> getOrderAggregations(LocalDateTime start, LocalDateTime end) {
         return orderRepository.findOrderAggregations(start, end);
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public Long getTotalPaymentAmount(Long userId, LocalDateTime since) {
         Long total = orderRepository.sumPaymentAmountByUserId(userId, since);
         return total != null ? total : 0L;
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getMyOrdersLast3Months(Long userId, Pageable pageable) {
-        return orderRepository.findByUserIdAndOrderDateAfter(userId, LocalDateTime.now().minusMonths(3), pageable).map(OrderResponse::from);
+        return orderRepository.findByUserIdAndOrderDateAfter(userId, LocalDateTime.now().minusMonths(3), pageable)
+                .map(OrderResponse::from);
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public OrderValidationInfoResponse getValidationInfo(String orderKey) {
         return orderRepository.findByOrderKey(orderKey).map(OrderValidationInfoResponse::from)
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
     }
 
-    @Override @Transactional(readOnly = true)
+    @Override
+    @Transactional(readOnly = true)
     public boolean hasPurchasedBook(Long memberId, Long bookId) {
         return orderRepository.hasPurchasedBook(memberId, bookId);
     }
@@ -143,7 +155,9 @@ public class OrderServiceImpl implements OrderService {
         Order order = orderRepository.findById(message.getOrderId())
                 .orElseThrow(() -> new OrderException(OrderErrorCode.ORDER_NOT_FOUND));
 
-        if (order.getDeliveryStatus() != DeliveryStatus.PAYMENT_WAITING) return;
+        if (order.getDeliveryStatus() != DeliveryStatus.PAYMENT_WAITING) {
+            return;
+        }
 
         // 금액 검증 (테스트 통과용)
         if (order.getPaymentAmount() != message.getTotalAmount().intValue()) {
@@ -204,29 +218,47 @@ public class OrderServiceImpl implements OrderService {
     public void autoCompleteDelivery() {
         LocalDateTime threshold = LocalDateTime.now().minusDays(3);
         orderRepository.findByDeliveryStatusAndDelivery_ActualShipDateBefore(DeliveryStatus.DELIVERING, threshold)
-                .forEach(o -> { o.updateStatus(DeliveryStatus.DELIVERY_COMPLETED); if (o.getDelivery() != null) o.getDelivery().completeDelivery(); });
+                .forEach(o -> {
+                    o.updateStatus(DeliveryStatus.DELIVERY_COMPLETED);
+                    if (o.getDelivery() != null) {
+                        o.getDelivery().completeDelivery();
+                    }
+                });
     }
 
     @Override
     public void autoConfirmPurchase() {
         LocalDateTime threshold = LocalDateTime.now().minusDays(10);
-        orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(DeliveryStatus.DELIVERY_COMPLETED, threshold)
+        orderRepository.findByDeliveryStatusAndDelivery_ActualCompletionDateBefore(DeliveryStatus.DELIVERY_COMPLETED,
+                        threshold)
                 .forEach(o -> this.purchaseConfirm(o.getId()));
     }
 
     @Override
     public void cancelExpiredOrders() {
         LocalDateTime threshold = LocalDateTime.now().minusHours(24);
-        orderRepository.findByDeliveryStatusAndOrderDateBefore(DeliveryStatus.PAYMENT_WAITING, threshold)
-                .forEach(o -> { try { processPaymentWaitingOrderCancellation(o); o.updateStatus(DeliveryStatus.CANCELED); } catch (Exception ignored) {} });
+
+        orderRepository
+                .findByDeliveryStatusAndOrderDateBefore(DeliveryStatus.PAYMENT_WAITING, threshold)
+                .forEach(o -> {
+                    try {
+                        processPaymentWaitingOrderCancellation(o);
+                        o.updateStatus(DeliveryStatus.CANCELED);
+                    } catch (Exception e) {
+                        log.error("결제대기 주문 자동 취소 실패 - orderId={}", o.getId(), e);
+                    }
+                });
     }
+
 
     // =====================================================================================
     // 5. HELPERS
     // =====================================================================================
 
     private double getMemberEarnRate(Long userId) {
-        if (userId == null) return 0.0;
+        if (userId == null) {
+            return 0.0;
+        }
         try {
             return memberClient.getMemberGrade(userId).getEarnRate();
         } catch (Exception e) {
@@ -234,7 +266,8 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate, String orderKey) {
+    private OrderCalculationData processOrderItemsAndHoldStock(OrderCreateRequest request, double earnRate,
+                                                               String orderKey) {
         Map<Long, BookInfoResponse> bookInfoMap = getBookInfoMap(request.getOrderItems());
         Map<Long, Wrapper> wrapperMap = getWrapperMap(request.getOrderItems());
         List<OrderItem> finalOrderItems = new ArrayList<>();
@@ -256,15 +289,18 @@ public class OrderServiceImpl implements OrderService {
         }
         bookClient.holdStockBatch(stockRequests, orderKey);
         return OrderCalculationData.builder().tempOrderItems(finalOrderItems).totalProductAmount(totalAmount)
-                .totalWrappingFee(totalWrappingFee).totalEarnedPoint((int)(totalAmount * earnRate))
+                .totalWrappingFee(totalWrappingFee).totalEarnedPoint((int) (totalAmount * earnRate))
                 .firstBookTitle(finalOrderItems.getFirst().getBookTitle()).build();
     }
 
-    private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(OrderCreateRequest request, OrderCalculationData data, int deliveryFee) {
+    private OrderCreateRequest.OrderCalculationResult calculateFinalAmounts(OrderCreateRequest request,
+                                                                            OrderCalculationData data,
+                                                                            int deliveryFee) {
         int couponDiscount = calculateCouponDiscount(request, data.totalProductAmount());
         int usedPoint = request.getUsedPoint() != null ? request.getUsedPoint() : 0;
         int wrappingFee = data.totalWrappingFee();
-        int finalPayment = Math.max(0, (data.totalProductAmount() + deliveryFee + wrappingFee) - couponDiscount - usedPoint);
+        int finalPayment =
+                Math.max(0, (data.totalProductAmount() + deliveryFee + wrappingFee) - couponDiscount - usedPoint);
         return OrderCreateRequest.OrderCalculationResult.builder()
                 .productAmount(data.totalProductAmount())
                 .deliveryFee(deliveryFee)
@@ -276,11 +312,16 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private int calculateCouponDiscount(OrderCreateRequest request, int totalAmount) {
-        if (request.getCouponId() == null || request.getUserId() == null) return 0;
+        if (request.getCouponId() == null || request.getUserId() == null) {
+            return 0;
+        }
         try {
-            CouponCalculationResponse resp = couponClient.calculateCoupon(request.getUserId(), new CouponCalculationRequest(request.getCouponId(), (long)totalAmount));
+            CouponCalculationResponse resp = couponClient.calculateCoupon(request.getUserId(),
+                    new CouponCalculationRequest(request.getCouponId(), (long) totalAmount));
             return resp.getDiscountAmount().intValue();
-        } catch (Exception e) { throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR); }
+        } catch (Exception e) {
+            throw new OrderException(OrderErrorCode.COUPON_SERVICE_ERROR);
+        }
     }
 
     private void sendPointEarnMessage(Order o) {
@@ -330,12 +371,6 @@ public class OrderServiceImpl implements OrderService {
         // 포인트 TCC Cancel
         if (uid != null && point != null && point > 0) {
             try {
-                // orderId가 아직 없을 수도 있으므로 0L 혹은 생성된 ID 사용해야 함.
-                // createOrder 내에서 에러난거면 DB에 Order가 안생겼을 수 있음 -> 이 경우 Member 서버가 OrderId 못찾으면 에러낼 수 있음.
-                // 하지만 Member Server 구현 상 Reserve 상태면 OrderId 없이도 취소 가능하게 하거나,
-                // OrderCreateService에서 ID를 딴 뒤 실패했다면 그 ID를 넘겨야 함.
-                // 여기선 'orderId=0L'로 보내면 Member서버가 못찾을 수 있으니 주의.
-                // (Member 서버가 OrderId를 FK로 잡지 않고 논리적 참조만 한다면 0L도 OK)
                 memberClient.cancelPoint(PointTransactionRequest.builder()
                         .memberId(uid)
                         .amount(Long.valueOf(point))
@@ -348,22 +383,30 @@ public class OrderServiceImpl implements OrderService {
         // 재고 해제
         if (data != null) {
             try {
-                bookClient.releaseHeldStock(data.tempOrderItems().stream().map(OrderItem::getBookId).toList(), key);
-            } catch (Exception ignored) {}
+                bookClient.releaseHeldStock(data.tempOrderItems()
+                        .stream().
+                        map(OrderItem::getBookId)
+                        .toList(), key);
+            } catch (Exception e) {
+                log.error("보상 트랜잭션 실패 - 재고 해제 (key={})", key, e);
+            }
         }
-    // ... (purchaseConfirm 등 기타 메서드 내 rabbitTemplate 메시지 전송 로직 유지)
-    // purchaseConfirm에서 포인트 '적립'은 RabbitMQ를 타므로 MemberClient 직접 호출 안 함. (기존 유지)
-}
+    }
 
     private Map<Long, BookInfoResponse> getBookInfoMap(List<OrderCreateRequest.OrderItemRequest> items) {
-        return Objects.requireNonNull(bookClient.getBooksBulk(items.stream().map(OrderCreateRequest.OrderItemRequest::getBookId).distinct().toList()).getBody())
+        return Objects.requireNonNull(bookClient.getBooksBulk(
+                        items.stream().map(OrderCreateRequest.OrderItemRequest::getBookId).distinct().toList()).getBody())
                 .stream().collect(Collectors.toMap(BookInfoResponse::getBookId, Function.identity()));
     }
 
     private Map<Long, Wrapper> getWrapperMap(List<OrderCreateRequest.OrderItemRequest> items) {
-        Set<Long> ids = items.stream().map(OrderCreateRequest.OrderItemRequest::getWrapperId).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (ids.isEmpty()) return Collections.emptyMap();
-        return wrapperRepository.findAllById(ids).stream().collect(Collectors.toMap(Wrapper::getId, Function.identity()));
+        Set<Long> ids = items.stream().map(OrderCreateRequest.OrderItemRequest::getWrapperId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return wrapperRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(Wrapper::getId, Function.identity()));
     }
 
     private int calculateDeliveryFee(int amount, String addr) {

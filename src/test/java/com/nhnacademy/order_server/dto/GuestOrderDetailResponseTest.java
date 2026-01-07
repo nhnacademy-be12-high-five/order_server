@@ -114,17 +114,17 @@ class GuestOrderDetailResponseTest {
 
         // Then
         // 삼항 연산자 (? "" : value) 테스트
-        assertThat(response.getReceiverName()).isEqualTo("");
-        assertThat(response.getAddress()).isEqualTo("");
+        assertThat(response.getReceiverName()).isEmpty();
+        assertThat(response.getAddress()).isEmpty();
 
         // 삼항 연산자 (? 0L : value) 테스트
-        assertThat(response.getDeliveryFee()).isEqualTo(0L);
-        assertThat(response.getCouponDiscount()).isEqualTo(0L);
-        assertThat(response.getPointDiscount()).isEqualTo(0L);
-        assertThat(response.getPaymentAmount()).isEqualTo(0L);
+        assertThat(response.getDeliveryFee()).isZero();
+        assertThat(response.getCouponDiscount()).isZero();
+        assertThat(response.getPointDiscount()).isZero();
+        assertThat(response.getPaymentAmount()).isZero();
 
         // 포장비 0원 확인
-        assertThat(response.getWrappingFee()).isEqualTo(0L);
+        assertThat(response.getWrappingFee()).isZero();
     }
 
     @Test

@@ -492,17 +492,18 @@ class OrderServiceImplTest {
                     new Object[]{3L, 50000L}
             );
 
-            given(orderRepository.sumPaymentAmountByUserIds(eq(userIds), eq(since)))
+            given(orderRepository.sumPaymentAmountByUserIds((userIds), (since)))
                     .willReturn(mockResults);
 
             // When
             Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, since);
 
             // Then
-            assertThat(result).hasSize(3);
-            assertThat(result.get(1L)).isEqualTo(150000L);
-            assertThat(result.get(2L)).isEqualTo(200000L);
-            assertThat(result.get(3L)).isEqualTo(50000L);
+            assertThat(result)
+                    .hasSize(3)
+                    .containsEntry(1L, 150000L)
+                    .containsEntry(2L, 200000L)
+                    .containsEntry(3L, 50000L);
         }
 
         @Test
@@ -548,8 +549,10 @@ class OrderServiceImplTest {
 
             Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, LocalDateTime.now());
 
-            assertThat(result).hasSize(1);
-            assertThat(result.get(1L)).isEqualTo(10000L);
+            assertThat(result)
+                    .hasSize(1)
+                    .containsEntry(1L, 10000L);
+
         }
 
         @Test
@@ -570,7 +573,9 @@ class OrderServiceImplTest {
             Map<Long, Long> result = orderService.getBulkTotalAmounts(userIds, LocalDateTime.now());
 
             // Then
-            assertThat(result.get(1L)).isEqualTo(100L);
+            assertThat(result)
+                    .containsEntry(1L, 100L);
+
         }
     }
 }

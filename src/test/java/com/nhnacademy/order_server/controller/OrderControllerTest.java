@@ -106,7 +106,7 @@ class OrderControllerTest {
                 .usedPoint(1000)
                 .build();
 
-        given(orderService.getValidationInfo(eq(orderKey))).willReturn(response);
+        given(orderService.getValidationInfo(orderKey)).willReturn(response);
 
         mockMvc.perform(get("/api/orders/{orderKey}/payments", orderKey)
                         .contentType(MediaType.APPLICATION_JSON))
@@ -151,7 +151,8 @@ class OrderControllerTest {
                 .totalPrice(20000)
                 .build();
 
-        given(orderService.getOrderDetail(eq(orderId))).willReturn(response);
+        given(orderService.getOrderDetail(orderId)).willReturn(response);
+
 
         mockMvc.perform(get("/api/orders/{orderId}", orderId))
                 .andExpect(status().isOk())
@@ -199,7 +200,8 @@ class OrderControllerTest {
                 .totalAmount(10000L)
                 .build();
 
-        given(orderService.getGuestOrder(eq(1L), eq("1234"))).willReturn(response);
+        given(orderService.getGuestOrder(1L, "1234")).willReturn(response);
+
 
         mockMvc.perform(post("/api/orders/guests/search")
                         .contentType(MediaType.APPLICATION_JSON)

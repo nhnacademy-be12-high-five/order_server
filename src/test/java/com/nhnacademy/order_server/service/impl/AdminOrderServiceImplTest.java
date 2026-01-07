@@ -100,7 +100,7 @@ class AdminOrderServiceImplTest {
             Page<OrderResponse> result = adminOrderService.getOrders(pageable, "DELIVERING");
 
             assertThat(result).isNotNull();
-            verify(orderRepository).findByDeliveryStatus(eq(DeliveryStatus.DELIVERING), eq(pageable));
+            verify(orderRepository).findByDeliveryStatus((DeliveryStatus.DELIVERING), (pageable));
         }
 
         @Test

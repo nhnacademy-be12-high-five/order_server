@@ -10,20 +10,12 @@ import com.nhnacademy.order_server.dto.response.OrderValidationInfoResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface OrderService {
 
     OrderCreateResponse createOrder(OrderCreateRequest request);
-
-    /*OrderCreateResponse createOrderTransactional(
-            OrderCreateRequest request,
-            String orderKey,
-            OrderCalculationData orderData,
-            OrderCreateRequest.OrderCalculationResult calculationResult
-    );*/
 
     OrderValidationInfoResponse getValidationInfo(String orderKey);
 
@@ -46,8 +38,6 @@ public interface OrderService {
     void purchaseConfirm(Long orderId);
 
     void cancelOrder(Long orderId);
-
-   // void cancelOrderTransactional(Long orderId);
 
     void autoCompleteDelivery();
 
