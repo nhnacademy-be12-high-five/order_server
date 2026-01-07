@@ -1,5 +1,6 @@
 package com.nhnacademy.order_server.service.impl;
 
+import com.nhnacademy.book_server.entity.Book;
 import com.nhnacademy.order_server.adapter.BookClient;
 import com.nhnacademy.order_server.adapter.CouponClient;
 import com.nhnacademy.order_server.adapter.MemberClient;
@@ -37,11 +38,15 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +67,7 @@ public class OrderServiceImpl implements OrderService {
     private final PasswordEncoder passwordEncoder;
     private final OrderCreateService orderCreateService;
     private final OrderCancelService orderCancelService;
+    private final RedisTemplate<Object, Object> redisTemplate;
 
     // =====================================================================================
     // 1. CREATE
@@ -76,13 +82,37 @@ public class OrderServiceImpl implements OrderService {
         OrderCreateRequest.OrderCalculationResult result = calculateFinalAmounts(request, orderData, deliveryFee);
 
         try {
-            return orderCreateService.createOrderInTransaction(request, orderKey, orderData, result);
+            OrderCreateResponse response = orderCreateService.createOrderInTransaction(request, orderKey, orderData, result);
+
+            // 2. 주문이 성공했을 때만 Redis 베스트셀러 점수 반영
+            // (에러가 나도 주문 전체를 롤백할 필요는 없으므로 try-catch로 감싸거나 비동기 처리 권장)
+            try {
+                updateBestSellerScore(request.getOrderItems());
+            } catch (Exception e) {
+                log.error("베스트셀러 집계 실패 (주문은 성공함): {}", e.getMessage());
+            }
+
+            return response;
         } catch (Exception e) {
             compensateTransaction(request.getUserId(), request.getUsedPoint(), orderData, orderKey);
             throw e;
         }
     }
 
+    private void updateBestSellerScore(@Valid @NotNull List<OrderCreateRequest.OrderItemRequest> orderItems) {
+
+        if (orderItems == null) return;
+
+        for (OrderCreateRequest.OrderItemRequest item : orderItems) {
+            // key: best_seller
+            // value: 책 ID
+
+            redisTemplate.opsForZSet().incrementScore(
+                    "best_seller",
+                    String.valueOf(item.getBookId()),item.getQuantity()
+            );
+        }
+    }
 
     // =====================================================================================
     // 2. READ
