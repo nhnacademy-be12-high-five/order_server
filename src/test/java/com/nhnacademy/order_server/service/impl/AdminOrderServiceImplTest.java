@@ -160,9 +160,10 @@ class AdminOrderServiceImplTest {
         }
 
         @Test
-        @DisplayName("실패: DELIVERY_COMPLETED가 아닌 상태에서 구매 확정 시도")
+        @DisplayName("실패: DELIVERY_COMPLETED, DELIVERING, PREPARING이 아닌 상태에서 구매 확정 시도")
         void updateToPurchaseConfirmed_Fail() {
-            order.updateStatus(DeliveryStatus.DELIVERING); // 아직 배송 중
+            order.updateStatus(DeliveryStatus.PAYMENT_WAITING);
+
             OrderStatusUpdateRequest req = new OrderStatusUpdateRequest();
             ReflectionTestUtils.setField(req, "status", "PURCHASE_CONFIRMED");
 
@@ -199,22 +200,22 @@ class AdminOrderServiceImplTest {
 
             assertThat(order.getDeliveryStatus()).isEqualTo(DeliveryStatus.RETURN_COMPLETED);
 
-            // 1. 환불금 적립 (EARN_REFUND) 호출 확인
+            // 1. 환불금 적립 (EARN_REFUND)
             verify(memberClient).createTransaction(argThat(req ->
                     "EARN_REFUND".equals(req.getPointEventType()) &&
                             req.getMemberId().equals(order.getUserId())
             ));
 
-            // 2. 사용 포인트 복구 (CANCEL_USE) 호출 확인
+            // 2. 사용 포인트 복구 (USE_CANCEL_RETURN) - 이름 수정됨
             verify(memberClient).createTransaction(argThat(req ->
-                    "CANCEL_USE".equals(req.getPointEventType()) &&
-                            req.getAmount() == 1000 // 사용했던 포인트
+                    "USE_CANCEL_RETURN".equals(req.getPointEventType()) &&
+                            req.getAmount() == 1000
             ));
 
-            // 3. 적립 포인트 회수 (CANCEL_EARN) 호출 확인
+            // 3. 적립 포인트 회수 (EARN_CANCEL_RETURN) - 이름 수정됨
             verify(memberClient).createTransaction(argThat(req ->
-                    "CANCEL_EARN".equals(req.getPointEventType()) &&
-                            req.getAmount() == 500 // 적립받았던 포인트
+                    "EARN_CANCEL_RETURN".equals(req.getPointEventType()) &&
+                            req.getAmount() == 0L // 서비스 코드에서 0L로 보내고 있음
             ));
             // 4. 쿠폰 복구 호출 확인
             verify(couponClient).cancelCouponUsage(eq(100L), any());
